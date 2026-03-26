@@ -159,7 +159,7 @@ server <- function(input, output, session) {
   #tempdir0 = as.character(tempdir)
   
   sub_clustered_obj=reactive({
-    source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
+    source('/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
     
     spe = mydata0()
    
@@ -458,7 +458,7 @@ server <- function(input, output, session) {
   recluster_tempdir0 = as.character(recluster_tempdir)
   
   reclustered_obj <- reactive({
-    source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
+    source('/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
     
     spe = recluster_data()
     

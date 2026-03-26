@@ -8,8 +8,8 @@ require(shinyFiles)
 require(phenomenalist)
 
 # Modify ID
-source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
-source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
+source('/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
+source('/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
 options(shiny.maxRequestSize=4000*1024^2) 
 jsResetCode <- "shinyjs.resetClick = function() {history.go(0)}" # Define the js method that resets the page
 

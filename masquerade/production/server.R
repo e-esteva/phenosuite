@@ -11,7 +11,7 @@ require(tidyverse)
 
 # ── One-time Python environment setup (runs at app start, not per-click) ─────
 use_virtualenv("r-reticulate", required = FALSE)
-source_python("/srv/shiny-server/Phenoptics-Menu/masquerade/production/masquerade.py")
+source_python("/srv/shiny-server/phenomenalist/masquerade/production/masquerade.py")
 
 server <- function(input, output, session) {
 

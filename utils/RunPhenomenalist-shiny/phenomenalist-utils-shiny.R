@@ -911,7 +911,7 @@ prepare_mask_inputs=function(spe,mask.only,out_dir,res,failed.markers,label=NULL
   
 }
 #source('/Users/ee699/working/TRIC/phenomenalist/R/plot-scatter.R')
-source('/srv/shiny-server/Phenoptics-Menu/utils/plot-scatter.R')
+source('/srv/shiny-server/phenomenalist/utils/plot-scatter.R')
 plot_dr.mod=function (x, dr, color_by, assay = "logcounts", smooth = FALSE, 
                       range = c(0.01, 0.99), out_dir = NULL,h=NULL,w=NULL,pdf=F,interactive=F) 
 {

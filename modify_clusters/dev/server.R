@@ -10,9 +10,9 @@ require(Seurat)
 require(tidyverse)
 
 # Modify ID
-source('/srv/shiny-server/Phenoptics-Menu/utils//RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
-source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
-source('/srv/shiny-server/Phenoptics-Menu/utils/heatmap-by-cluster.R')
+source('/srv/shiny-server/phenomenalist/utils//RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
+source('/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
+source('/srv/shiny-server/phenomenalist/utils/heatmap-by-cluster.R')
 
 # Phenotyping template function - EXACT COPY OF YOUR WORKING VERSION
 assign_celltype_with_template <- function(obj, phenotyping_template, cluster, mclust = T){

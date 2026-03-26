@@ -154,7 +154,7 @@ server <- function(input, output,session) {
       print('Unimodal:')
       print(unimodal)
       
-      source("/srv/shiny-server/Phenoptics-Menu/utils/spatial-shiny/renderCircos-shiny.R")
+      source("/srv/shiny-server/phenomenalist/utils/spatial-shiny/renderCircos-shiny.R")
       
       print('log_odds_ :')
       print(log_odds_)
@@ -221,7 +221,7 @@ server <- function(input, output,session) {
         }
         if(input$action == 'Harmonize'){
         
-	  #source("/srv/shiny-server/Phenoptics-Menu/utils/spatial-shiny/renderCircos-shiny-col_fun.R")
+	  #source("/srv/shiny-server/phenomenalist/utils/spatial-shiny/renderCircos-shiny-col_fun.R")
 
           inFile=input$log_odds
           

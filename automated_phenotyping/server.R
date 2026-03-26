@@ -7,8 +7,8 @@ require(phenomenalist)
 require(openai)
 require(cowplot)
 
-source('/srv/shiny-server/Phenoptics-Menu/utils//RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
-source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
+source('/srv/shiny-server/phenomenalist/utils//RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
+source('/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
 
 server=shinyServer( function(input, output, session) {
   
@@ -310,7 +310,7 @@ server=shinyServer( function(input, output, session) {
   		}
 	}
         plot_heatmap.mod(x=spe,group_by = group,out_dir = tempdir0)
-	source('/srv/shiny-server/Phenoptics-Menu/utils/plot-scatter.R')
+	source('/srv/shiny-server/phenomenalist/utils/plot-scatter.R')
         plot_dr.mod(spe,dr='UMAP',color_by = group,out_dir = tempdir0,h = 20,w = 20)
 	message('generating spatial plot')
         plot_spatial.mod(spe,color_by = group,out_dir = tempdir0,h = 20,w = 20,colors=generate_colors(length(unique(spe[[group]]))))

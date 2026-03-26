@@ -88,7 +88,7 @@ server <- function(input, output, session) {
       #py_install('matplotlib')
       #py_install("seaborn")
       #py_install("rpy2")
-      source_python('/srv/shiny-server/Phenoptics-Menu/utils/spatial-shiny/vectra_lib_v4.py')      
+      source_python('/srv/shiny-server/phenomenalist/utils/spatial-shiny/vectra_lib_v4.py')      
       
       pd <- import("pandas")
       withProgress(message = "Running PCF Analysis", value = 0, {
@@ -131,7 +131,7 @@ server <- function(input, output, session) {
 	message(head(ppc))         
         
 
-        source("/srv/shiny-server/Phenoptics-Menu/utils/spatial-shiny/plot-pfcs-dev.R")
+        source("/srv/shiny-server/phenomenalist/utils/spatial-shiny/plot-pfcs-dev.R")
         
         plot_pcfs_R(ppc,out_dir = tempdir1,res=resolution,radius=radius)
         

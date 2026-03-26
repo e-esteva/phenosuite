@@ -13,7 +13,7 @@ library(lubridate)
 
 
 api_key <- Sys.getenv("OPENAI_API_KEY")
-models_list=read.csv('/srv/shiny-server/Phenoptics-Menu/utils/gpts/gpt_models-updated.csv')
+models_list=read.csv('/srv/shiny-server/phenomenalist/utils/gpts/gpt_models-updated.csv')
 date_=Sys.Date()
 if(date_ - max(as.Date(models_list$created)) > 90){ 
 	models_list=openai::list_models(openai_api_key=OPENAI_API_KEY)
@@ -23,7 +23,7 @@ if(date_ - max(as.Date(models_list$created)) > 90){
 	models.gpt=str_subset(string=models_data$id,pattern='gpt')
 	models.data=models_data[match(models.gpt,models_data$id),]
 
-	write.csv(models.data,glue('/srv/shiny-server/Phenoptics-Menu/utils/gpts/gpt_models-updated.csv'))
+	write.csv(models.data,glue('/srv/shiny-server/phenomenalist/utils/gpts/gpt_models-updated.csv'))
 }else{
 	models.gpt=models_list$id
 

@@ -86,11 +86,11 @@ server <- function(input, output,session) {
       
       
       
-      source('/srv/shiny-server/Phenoptics-Menu/spatial_interactions/utils/spatial-shiny/renderCircos-shiny.R')
-      source('/srv/shiny-server/Phenoptics-Menu/spatial_interactions/utils/spatial-shiny/genHeatmapVolcanoPlot.R')
+      source('/srv/shiny-server/phenomenalist/spatial_interactions/utils/spatial-shiny/renderCircos-shiny.R')
+      source('/srv/shiny-server/phenomenalist/spatial_interactions/utils/spatial-shiny/genHeatmapVolcanoPlot.R')
       
-      source_python('/srv/shiny-server/Phenoptics-Menu/spatial_interactions/utils/spatial-shiny/pwlo-es-pt.py')
-      source("/srv/shiny-server/Phenoptics-Menu/spatial_interactions/utils/spatial-shiny/gen-Heatmaps.R")
+      source_python('/srv/shiny-server/phenomenalist/spatial_interactions/utils/spatial-shiny/pwlo-es-pt.py')
+      source("/srv/shiny-server/phenomenalist/spatial_interactions/utils/spatial-shiny/gen-Heatmaps.R")
       
       print(resolution)
       print(head(spatial_obj))

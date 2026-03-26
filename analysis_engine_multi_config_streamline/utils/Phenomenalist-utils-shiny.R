@@ -139,10 +139,30 @@ plot_heatmap.mod=function(x, group_by, assay = "logcounts", out_dir = NULL,size.
     
   }
 }
+# Helper: smart fread that handles files with spaces in column names
+# fread auto-detect can pick space over comma/tab when headers have spaces
+# Strategy: try tab, comma, semicolon explicitly; pick first with >= 5 columns
+smart_fread <- function(filepath, ...) {
+  for(try_sep in c("\t", ",", ";")) {
+    result <- tryCatch({
+      tmp <- data.table::fread(filepath, sep = try_sep, fill = TRUE, ...)
+      if(ncol(tmp) >= 5) {
+        sep_name <- switch(try_sep, "\t" = "tab", "," = "comma", ";" = "semicolon")
+        message("smart_fread: '", sep_name, "' separator -> ", ncol(tmp), " columns")
+        tmp
+      } else NULL
+    }, error = function(e) NULL)
+    if(!is.null(result)) return(result)
+  }
+  # Fallback: auto-detect
+  message("smart_fread: falling back to auto-detect")
+  data.table::fread(filepath, fill = TRUE, ...)
+}
+
 create_object.mod.v0=function (x, expression_cols = NULL, metadata_cols = NULL, skip_cols = NULL, 
                             clean_names = TRUE, transformation = NULL, out_dir = NULL,down_sample_idx=NULL,classifier.label=NULL,plot_diagnostic=F,min.cells=1000,max.cells=1e5){
   if (is.character(x)) {
-    x <- data.table::fread(x, stringsAsFactors = FALSE, data.table = FALSE,fill = TRUE)
+    x <- smart_fread(x, stringsAsFactors = FALSE, data.table = FALSE)
     n1=x$`Classifier.Label`
     n2=x$`Classifier Label`
     if(length(str_subset(pattern='Classifier',string=names(x))) > 0){
@@ -244,12 +264,17 @@ create_object.mod.v0=function (x, expression_cols = NULL, metadata_cols = NULL, 
         stop("input is not a data frame")
       }
       
-      # adjust MAV column names
-      names(x) <- str_remove(names(x), ":Cyc_.*")
-      names(x) <- str_remove(names(x), ".*:")
+      # Platform-specific column name adjustments
+      # Only apply destructive colon-stripping for MAV data (identified by "Cyc_" pattern)
+      if(any(grepl("Cyc_", names(x)))) {
+        names(x) <- str_remove(names(x), ":Cyc_.*")
+        names(x) <- str_remove(names(x), ".*:")
+      }
       
-      # adjust Visiopharm column names
-      names(x) <- str_remove(names(x), "MP.*\\(")
+      # adjust Visiopharm column names (only if MP pattern found)
+      if(any(grepl("^MP", names(x)))) {
+        names(x) <- str_remove(names(x), "MP.*\\(")
+      }
       
       # adjust HALO column names
       names(x) <- str_remove(names(x), " Cell Intensity")
@@ -330,21 +355,57 @@ create_object.mod.v0=function (x, expression_cols = NULL, metadata_cols = NULL, 
   exprs <- as.matrix(exprs)
   exprs <- exprs[, sort(colnames(exprs))]
   rownames(exprs) <- rownames(x)
+  
+  # Drop cells with incomplete expression data (e.g., cells without detected nuclei
+  # that have NA values in nucleus compartment columns after fill=TRUE CSV reading)
+  incomplete_rows <- which(!complete.cases(exprs))
+  if(length(incomplete_rows) > 0) {
+    dropped_ids <- rownames(exprs)[incomplete_rows]
+    na_per_col <- colSums(is.na(exprs[incomplete_rows, , drop = FALSE]))
+    affected_cols <- names(na_per_col)[na_per_col > 0]
+    
+    message(glue("Dropping {length(incomplete_rows)} cells with missing expression values"))
+    message("  Affected columns: ", paste(affected_cols, collapse = ", "))
+    
+    if(!is.null(out_dir)) {
+      report_lines <- c(
+        "=== Dropped Cells Report ===",
+        paste0("Date: ", Sys.time()),
+        paste0("Total cells in input: ", nrow(exprs)),
+        paste0("Cells dropped: ", length(incomplete_rows)),
+        paste0("Cells retained: ", nrow(exprs) - length(incomplete_rows)),
+        "",
+        "Reason: Missing (NA) values in one or more expression columns.",
+        "This typically occurs when a cell was segmented without a detected",
+        "nucleus, so nucleus compartment measurements are absent.",
+        "",
+        "Columns with missing values:",
+        paste0("  ", affected_cols, ": ", na_per_col[affected_cols], " NAs"),
+        "",
+        paste0("Dropped cell IDs (", length(dropped_ids), " total):"),
+        paste0("  ", dropped_ids)
+      )
+      report_path <- file.path(out_dir, "dropped_cells_report.txt")
+      writeLines(report_lines, report_path)
+      message("  Report saved to: ", report_path)
+    }
+    
+    exprs <- exprs[-incomplete_rows, , drop = FALSE]
+    x <- x[-incomplete_rows, , drop = FALSE]
+  }
+  
   message("number of expression columns: ", ncol(exprs))
   message("number of metadata columns: ", ncol(x))
   message("")
   message("expression columns: ", toString(colnames(exprs)), 
           "\n")
   message("metadata columns: ", toString(colnames(x)), "\n")
-  # if (!is.null(out_dir)) {
-  #   dir.create(out_dir)
-  # }
   if(plot_diagnostic){
     expression_dir=glue('{out_dir}/expression-diagnostic-plots')
     for(i in seq(dim(exprs)[2])){
       pdf(glue('{out_dir}/{colnames(exprs)[i]}.pdf'))
       plot(density(exprs[,i],main=colnames(exprs)[i]))
-      abline(v=quantile(exprs[,i]))
+      abline(v=quantile(exprs[,i], na.rm=TRUE))
       dev.off()
     }
   }
@@ -362,13 +423,7 @@ create_object.mod.v0=function (x, expression_cols = NULL, metadata_cols = NULL, 
     
   }
   
-  # Replace any remaining NAs with 0 before creating the object
-  # (NAs cause UMAP and other downstream steps to fail)
-  na_count <- sum(is.na(exprs))
-  if(na_count > 0) {
-    message(glue("Replacing {na_count} NA values in expression matrix with 0"))
-    exprs[is.na(exprs)] <- 0
-  }
+  # (Incomplete rows already dropped above — no NA imputation needed)
   
   s <- SpatialExperiment::SpatialExperiment(assay = list(counts = t(exprs)), 
                                             colData = x, spatialCoordsNames = c("x", "y"))
@@ -386,7 +441,7 @@ create_object.mod.v0=function (x, expression_cols = NULL, metadata_cols = NULL, 
 create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, skip_cols = NULL, 
                             clean_names = TRUE, transformation = NULL, out_dir = NULL,down_sample_idx=NULL,classifier.label=NULL,plot_diagnostic=F,min.cells=1000,max.cells=1e5){
   if (is.character(x)) {
-    x <- data.table::fread(x, stringsAsFactors = FALSE, data.table = FALSE,fill = TRUE)
+    x <- smart_fread(x, stringsAsFactors = FALSE, data.table = FALSE)
     n1=x$`Classifier.Label`
     n2=x$`Classifier Label`
     if(length(str_subset(pattern='Classifier',string=names(x))) > 0){
@@ -483,12 +538,17 @@ create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, ski
         stop("input is not a data frame")
       }
       
-      # adjust MAV column names
-      names(x) <- str_remove(names(x), ":Cyc_.*")
-      names(x) <- str_remove(names(x), ".*:")
+      # Platform-specific column name adjustments
+      # Only apply destructive colon-stripping for MAV data (identified by "Cyc_" pattern)
+      if(any(grepl("Cyc_", names(x)))) {
+        names(x) <- str_remove(names(x), ":Cyc_.*")
+        names(x) <- str_remove(names(x), ".*:")
+      }
       
-      # adjust Visiopharm column names
-      names(x) <- str_remove(names(x), "MP.*\\(")
+      # adjust Visiopharm column names (only if MP pattern found)
+      if(any(grepl("^MP", names(x)))) {
+        names(x) <- str_remove(names(x), "MP.*\\(")
+      }
       
       # adjust HALO column names
       names(x) <- str_remove(names(x), " Cell Intensity")
@@ -605,6 +665,45 @@ create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, ski
   exprs <- as.matrix(exprs)
   exprs <- exprs[, sort(colnames(exprs))]
   rownames(exprs) <- rownames(x)
+  
+  # Drop cells with incomplete expression data (e.g., cells without detected nuclei
+  # that have NA values in nucleus compartment columns after fill=TRUE CSV reading)
+  incomplete_rows <- which(!complete.cases(exprs))
+  if(length(incomplete_rows) > 0) {
+    dropped_ids <- rownames(exprs)[incomplete_rows]
+    na_per_col <- colSums(is.na(exprs[incomplete_rows, , drop = FALSE]))
+    affected_cols <- names(na_per_col)[na_per_col > 0]
+    
+    message(glue("Dropping {length(incomplete_rows)} cells with missing expression values"))
+    message("  Affected columns: ", paste(affected_cols, collapse = ", "))
+    
+    if(!is.null(out_dir)) {
+      report_lines <- c(
+        "=== Dropped Cells Report ===",
+        paste0("Date: ", Sys.time()),
+        paste0("Total cells in input: ", nrow(exprs)),
+        paste0("Cells dropped: ", length(incomplete_rows)),
+        paste0("Cells retained: ", nrow(exprs) - length(incomplete_rows)),
+        "",
+        "Reason: Missing (NA) values in one or more expression columns.",
+        "This typically occurs when a cell was segmented without a detected",
+        "nucleus, so nucleus compartment measurements are absent.",
+        "",
+        "Columns with missing values:",
+        paste0("  ", affected_cols, ": ", na_per_col[affected_cols], " NAs"),
+        "",
+        paste0("Dropped cell IDs (", length(dropped_ids), " total):"),
+        paste0("  ", dropped_ids)
+      )
+      report_path <- file.path(out_dir, "dropped_cells_report.txt")
+      writeLines(report_lines, report_path)
+      message("  Report saved to: ", report_path)
+    }
+    
+    exprs <- exprs[-incomplete_rows, , drop = FALSE]
+    x <- x[-incomplete_rows, , drop = FALSE]
+  }
+  
   message("number of expression columns: ", ncol(exprs))
   message("number of metadata columns: ", ncol(x))
   message("")
@@ -616,7 +715,7 @@ create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, ski
     for(i in seq(dim(exprs)[2])){
       pdf(glue('{out_dir}/{colnames(exprs)[i]}.pdf'))
       plot(density(exprs[,i],main=colnames(exprs)[i]))
-      abline(v=quantile(exprs[,i]))
+      abline(v=quantile(exprs[,i], na.rm=TRUE))
       dev.off()
     }
   }
@@ -634,13 +733,7 @@ create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, ski
     
   }
   
-  # Replace any remaining NAs with 0 before creating the object
-  # (NAs cause UMAP and other downstream steps to fail)
-  na_count <- sum(is.na(exprs))
-  if(na_count > 0) {
-    message(glue("Replacing {na_count} NA values in expression matrix with 0"))
-    exprs[is.na(exprs)] <- 0
-  }
+  # (Incomplete rows already dropped above — no NA imputation needed)
   
   s <- SpatialExperiment::SpatialExperiment(assay = list(counts = t(exprs)), 
                                             colData = x, spatialCoordsNames = c("x", "y"))
@@ -754,7 +847,7 @@ select_intensity_columns <- function(filepath,
                                      nuclear_markers = NULL,
                                      prefer_cytoplasm = FALSE) {
 
-  x <- data.table::fread(filepath,fill = TRUE)
+  x <- smart_fread(filepath)
   original_names <- names(x)
   names_lower <- tolower(original_names)
 
@@ -933,7 +1026,21 @@ prepare_mask_inputs=function(spe,mask.only,out_dir,res,failed.markers,label=NULL
   
 }
 #source('/Users/ee699/working/TRIC/phenomenalist/R/plot-scatter.R')
-source('/srv/shiny-server/Phenoptics-Menu/utils/plot-scatter.R')
+# Source plot-scatter.R — try multiple known locations
+local({
+  candidates <- c(
+    '/srv/shiny-server/phenomenalist/utils/plot-scatter.R',
+    '/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/plot-scatter.R'
+  )
+  for(f in candidates) {
+    if(file.exists(f)) {
+      message("Sourcing plot-scatter.R from: ", f)
+      source(f)
+      return(invisible(NULL))
+    }
+  }
+  message("WARNING: plot-scatter.R not found at any known location. plot_scatter() will not be available.")
+})
 plot_dr.mod=function (x, dr, color_by, assay = "logcounts", smooth = FALSE, 
                       range = c(0.01, 0.99), out_dir = NULL,h=NULL,w=NULL,pdf=F,interactive=F) 
 {
@@ -975,7 +1082,13 @@ plot_dr.mod=function (x, dr, color_by, assay = "logcounts", smooth = FALSE,
   coords <- as.data.frame(coords)
   coords <- cbind(coords, vals[rownames(coords), , drop = FALSE])
   for (val in colnames(vals)) {
-    p <- plot_scatter(data = coords, x = names(coords)[1], 
+    # Remove rows with NA in the current color_by column
+    plot_data <- coords[!is.na(coords[[val]]), , drop = FALSE]
+    if(nrow(plot_data) == 0) {
+      message("Skipping DR plot for '", val, "' — all values are NA")
+      next
+    }
+    p <- plot_scatter(data = plot_data, x = names(coords)[1], 
                       y = names(coords)[2], color_by = val, smooth = smooth, 
                       range = range, title = val)
     if (is.null(out_dir)) {
@@ -1046,11 +1159,17 @@ plot_spatial.mod=function (x, color_by, assay = "logcounts", smooth = FALSE, ran
   coords <- cbind(coords, vals[rownames(coords), , drop = FALSE])
   ratio <- max(coords$y)/max(coords$x)
   for (val in colnames(vals)) {
+    # Remove rows with NA in the current color_by column (from fill=TRUE reads)
+    plot_data <- coords[!is.na(coords[[val]]), , drop = FALSE]
+    if(nrow(plot_data) == 0) {
+      message("Skipping plot for '", val, "' — all values are NA")
+      next
+    }
     if(is.null(colors)){
-      p <- plot_scatter(data = coords, x = "x", y = "y", color_by = val, 
+      p <- plot_scatter(data = plot_data, x = "x", y = "y", color_by = val, 
                         smooth = smooth, range = range, title = val, aspect_ratio = ratio)
     }else{
-      p <- plot_scatter(data = coords, x = "x", y = "y", color_by = val, 
+      p <- plot_scatter(data = plot_data, x = "x", y = "y", color_by = val, 
                         smooth = smooth, range = range, title = val, aspect_ratio = ratio)+scale_color_manual(values=colors)
     }
     

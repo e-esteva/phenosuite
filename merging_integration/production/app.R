@@ -133,7 +133,7 @@ ui <- dashboardPage(
 server <- function(input, output, session) {
   # Check if source files exist before sourcing
       source_files <- c(
-                        '/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R'
+                        '/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R'
       )
 
       missing_files <- source_files[!file.exists(source_files)]
