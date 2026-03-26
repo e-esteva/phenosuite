@@ -1,6 +1,6 @@
 # PhenoSuite
 
-An integrated bioinformatics platform for spatial and single-cell genomics analysis, built on R Shiny. Developed by the Translational Research and Innovation Core (TRIC) at NYU, PhenoSuite provides modular tools for multiplex immunofluorescence imaging, cellular phenotyping, spatial transcriptomics, and automated AI-assisted classification.
+An integrated bioinformatics platform for spatial and single-cell genomics analysis, built on R Shiny. Developed by the Translational Immunology Cennter (TrIC) at NYU, PhenoSuite provides modular tools for multiplex immunofluorescence imaging, cellular phenotyping, spatial transcriptomics, and automated AI-assisted classification.
 
 ## Modules
 
