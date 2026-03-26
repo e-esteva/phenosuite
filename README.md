@@ -65,15 +65,20 @@ The `utils/` directory contains shared R and Python code sourced by multiple mod
 - **spatial-shiny/** — circos rendering, spatial interaction modeling, heatmap generation, and Vectra imaging libraries (Python)
 - **gpts/** — GPT model configuration for automated phenotyping
 
-## Deployment
+## Running Locally in RStudio
 
-Apps are deployed via Shiny Server at:
+1. Clone the repository and open the project in RStudio.
+2. Install the required R packages listed in the Tech Stack section above.
+3. For modules that use Python (e.g., `masquerade`), ensure Python dependencies are installed and accessible via `reticulate`.
+4. To run a module, open its entry file in RStudio:
+   - For single-file apps: open `app.R` (e.g., `spatialExploreR/app.R`)
+   - For two-file apps: open `server.R` or `ui.R` (e.g., `circos-builder/production/server.R`)
+5. Click **Run App** in RStudio, or run from the console:
+   ```r
+   shiny::runApp("spatialExploreR")
+   ```
 
-```
-/srv/shiny-server/phenomenalist/
-```
-
-Max request sizes are configured per module (typically 1–4 GB) to accommodate large imaging datasets.
+Shared utilities in `utils/` are sourced at runtime by each module. If running outside the default Shiny Server path, update the `source()` paths in the relevant `server.R`/`app.R` files to point to your local `utils/` directory.
 
 ## Data Flow
 
