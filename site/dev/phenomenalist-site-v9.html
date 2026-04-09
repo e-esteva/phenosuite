@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {font-family: Arial;}
+
+/* Style the tab */
+.tab {
+  overflow: hidden;
+  border: 1px solid #ccc;
+  background-color: #f1f1f1;
+}
+
+/* Style the buttons inside the tab */
+.tab button {
+  background-color: inherit;
+  float: left;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  transition: 0.3s;
+  font-size: 17px;
+}
+
+/* Change background color of buttons on hover */
+.tab button:hover {
+  background-color: #ddd;
+}
+
+/* Create an active/current tablink class */
+.tab button.active {
+  background-color: #ccc;
+}
+
+/* Style the tab content */
+.tabcontent {
+  display: none;
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-top: none;
+}
+.button1 {
+  padding: 20px 30px;
+  border-radius: 12px;
+  background-color: #ADD8E6;
+  font-family: Arial,Helvetica,sans-serif;
+  font-size: 20px;
+}
+.button-17 {
+            align-items: center;
+            appearance: none;
+            background-color: #fff;
+                border-radius: 24px;
+            border-style: none;
+            box-shadow: rgba(0, 0, 0, .2) 0 3px 5px -1px,rgba(0, 0, 0, .14) 0 6px 10px 0,rgba(0, 0, 0, .12) 0 1px 18px 0;
+            box-sizing: border-box;
+            color: #3c4043;
+                cursor: pointer;
+            display: inline-flex;
+            fill: currentcolor;
+            font-family: "Google Sans",Roboto,Arial,sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            height: 48px;
+            justify-content: center;
+            letter-spacing: .25px;
+            line-height: normal;
+            max-width: 100%;
+            overflow: visible;
+            padding: 2px 24px;
+            position: relative;
+            text-align: center;
+            text-transform: none;
+            transition: box-shadow 280ms cubic-bezier(.4, 0, .2, 1),opacity 15ms linear 30ms,transform 270ms cubic-bezier(0, 0, .2, 1) 0ms;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            width: auto;
+            will-change: transform,opacity;
+            z-index: 0;
+}
+
+.button-17:hover {
+        background: #F6F9FE;
+            color: #174ea6;
+}
+
+.button-17:active {
+        box-shadow: 0 4px 4px 0 rgb(60 64 67 / 30%), 0 8px 12px 6px rgb(60 64 67 / 15%);
+        outline: none;
+}
+
+.button-17:focus {
+        outline: none;
+        border: 2px solid #4285f4;
+}
+
+.button-17:not(:disabled) {
+        box-shadow: rgba(60, 64, 67, .3) 0 1px 3px 0, rgba(60, 64, 67, .15) 0 4px 8px 3px;
+}
+
+.button-17:not(:disabled):hover {
+        box-shadow: rgba(60, 64, 67, .3) 0 2px 3px 0, rgba(60, 64, 67, .15) 0 6px 10px 4px;
+}
+
+.button-17:not(:disabled):focus {
+        box-shadow: rgba(60, 64, 67, .3) 0 1px 3px 0, rgba(60, 64, 67, .15) 0 4px 8px 3px;
+}
+
+.button-17:not(:disabled):active {
+        box-shadow: rgba(60, 64, 67, .3) 0 4px 4px 0, rgba(60, 64, 67, .15) 0 8px 12px 6px;
+}
+
+.button-17:disabled {
+        box-shadow: rgba(60, 64, 67, .3) 0 1px 3px 0, rgba(60, 64, 67, .15) 0 4px 8px 3px;
+}
+footer {
+  clear: both;
+  text-align: center;
+  padding: 3px;
+  background-color: Purple;
+  color: white;
+}
+.footer2 {
+  clear: both;
+  text-align: center;
+  padding: 3px;
+  background-color: white;
+  color: white;
+}
+a:link { text-decoration: none; }
+a:visited { text-decoration: none; }
+a:hover { text-decoration: none; }
+a:active { text-decoration: none; }
+
+.text-box {
+
+  margin-top: 1px;
+  margin-left: 50%;
+  margin-right: 10px;
+}
+.workflow-img{
+  clear: both;
+  margin-top: 1%;
+  margin-left: 10%;
+  width: 500px;
+  height: 500px;
+}
+
+div.scroll-container {
+  float: left;
+  background-color: #333;
+  overflow: auto;
+  white-space: nowrap;
+  padding: 10px;
+  width: 700px;
+  height: 400px;
+}
+
+div.scroll-container img {
+  padding: 0px;
+  
+}
+</style>
+</head>
+<body>
+
+<h2>Phenomenalist Platform for CODEX Analysis <i class="fa-solid fa-layer-group"></i></h2>
+<p>Click on the tabs to access apps:</p>
+<div class="tab">
+	<button class="tablinks" onclick="openApp(event, 'Analysis Engine')">Analysis Engine <i class="fa-solid fa-magnifying-glass-chart"></i></button>
+	<button class="tablinks" onclick="openApp(event, 'phenotyping-module')">Phenotyping Module <i class="fa-solid fa-microscope"></i></button>
+	<button class="tablinks" onclick="openApp(event, 'spatial-module')">Spatial Module <i class="fa-brands fa-codepen"></i></button>
+	<button class="tablinks" onclick="openApp(event, 'graphics-module')">Graphics Module <i class="fa-solid fa-object-group"></i></button>
+
+</div>
+
+<div id="Analysis Engine" class="tabcontent">
+  <h3>Load in segmentation file</h3>
+  <div>
+  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/analysis_engine_multi/">launch <i class="fa-solid fa-rocket"></i></a></button></p>
+  </div>
+  <div>
+	  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/analysis_pre/spatial_gating/">spatial gating of segmentation file <i class="fa-solid fa-magnifying-glass-minus"></i></a></button></p>
+  </div>
+  <div>
+          <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/analysis_pre/segmentation_file_analysis/">compare segmentation files <i class="fa-solid fa-balance-scale"></i></a></button></p>
+  </div>
+  <h3> Load in SPE object </h3>
+  <div>
+          <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/analysis_pre/spe_analysis/">compare spe objects <i class="fa-solid fa-balance-scale"></i></a></button></p>
+  </div>
+</div>
+
+<div id="phenotyping-module" class="tabcontent">
+  <h3>Select Phenotyping Modality</h3>
+  <div>
+          <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/sub_clustering/production/"><i class="fa-solid fa-gears"></i> Sub-cluster heterogeneous clusters</a></button></p>
+  </div>
+  <div>
+	  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/automated_phenotyping/"><i class="fa-solid fa-robot"></i> Use the latest GPT model to automate phenotyping</a></button></p>
+  </div>
+  <div>
+	  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/modify_clusters/"><i class="fa-solid fa-pencil"></i> Manually annotate clusters and view updated heatmap in real time</a></button></p>
+  </div>
+  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/masquerade/">Generate compressed copy of input qptiff with cluster mask channels for direct inspection <i class="fa-solid fa-masks-theater"></i></a></button></p>
+
+</div>
+
+
+<div id="spatial-module" class="tabcontent">
+  <h3>Perform spatial dynamics analysis</h3>
+  <div>
+	  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/pcf-v2/production/">PCF <i class="fa-brands fa-codepen"></i></a></button></p>
+  
+  </div>
+  
+  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/spatial_interactions/production/">Pairwise Log-Odds <i class="fa-brands fa-codepen"></i></a></button></p>
+  
+</div>
+
+<div id="graphics-module" class="tabcontent">
+  <h3>Modify Circos & PCF plots</h3>
+  <div>
+          <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/pcf-builder/production/"><i class="fa-solid fa-wrench"></i> PCF Builder (compare samples with same ref group) </a></button></p>
+
+  </div>
+  <div>
+          <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/circos-artist/production/"><i class="fa-solid fa-palette"></i> Circos Artist (single sample) </a></button></p>
+  
+  </div>
+  
+  <p><button class="button button-17"type="submit"><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/circos-builder/production/"><i class="fa-solid fa-wrench"></i> Circos Builder (integrate / harmonize multiple samples)</a></button></p>
+  
+</div>
+
+
+
+<div class="scroll-container">
+  <img src="assets/imgs/CODEX-tissue-akoya.png" alt="akoya">
+  <img src="assets/imgs/BreastCancer-CODEX.png" alt="breast-cancer">
+</div>
+
+
+<div>
+
+        
+	<p class="text-box"> This is a web-based interactive  application to perform a <strong><em>CODEX / spatially-resolved proteomics analysis</em></strong> based on <a href="https://github.com/NYUTrIC/PhenoCycler-CODEX"><strong>Phenomenalist</strong></a>.
+
+        The web-app style makes it intuitive to go back between steps and adjust parameters based on different outputs/plots, giving the user the ability to use feedback in order to guide the analysis iteratively.
+
+	It is meant to provide an intuitive interface for researchers to easily <strong><em>upload, analyze, visualize, and explore spatiall resolved proteomics data interactively with no prior programming knowledge in R.</em></strong></p><img class="workflow-img" src="assets/imgs/Phenomenalist-pipeline-bioRender.png" alt="workflow">
+</div>	
+
+
+<script type="text/javascript" src="https://code.jquery.com/jquery-latest.js" crossorigin="anonymous"></script>
+<script type="text/javascript" src="assets/js/phenomenalist-site.js"></script>
+<script src="https://kit.fontawesome.com/c696b8a2eb.js" crossorigin="anonymous"></script> 
+<footer>
+	<p>NYU Translational Immunology Center</p>
+	<p> Authors: Eduardo Esteva & Igor Dolgalev</p>
+</footer>
+<footer>
+	<p><footer class="footer2"><a href="https://github.com/NYUTrIC/"><i class="fa-brands fa-github"></i></a></p>
+</footer>
+</body>
+</html> 
+

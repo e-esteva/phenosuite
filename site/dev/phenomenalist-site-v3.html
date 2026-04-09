@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {font-family: Arial;}
+
+/* Style the tab */
+.tab {
+  overflow: hidden;
+  border: 1px solid #ccc;
+  background-color: #f1f1f1;
+}
+
+/* Style the buttons inside the tab */
+.tab button {
+  background-color: inherit;
+  float: left;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  transition: 0.3s;
+  font-size: 17px;
+}
+
+/* Change background color of buttons on hover */
+.tab button:hover {
+  background-color: #ddd;
+}
+
+/* Create an active/current tablink class */
+.tab button.active {
+  background-color: #ccc;
+}
+
+/* Style the tab content */
+.tabcontent {
+  display: none;
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-top: none;
+}
+</style>
+</head>
+<body>
+
+<h2>Phenomenalist Platform</h2>
+<p>Click on the tabs to access apps:</p>
+
+<div class="tab">
+	<button class="tablinks" onclick="openApp(event, 'Analysis Engine')">Analysis Engine <i class="fa-solid fa-magnifying-glass-chart"></i></button>
+  	<button class="tablinks" onclick="openApp(event, 'GPT-powered automated phenotyping')">GPT-powered automated phenotpying <i class="fa-solid fa-robot"></i></button>
+  	<button class="tablinks" onclick="openApp(event, 'Manual Phenotyping')">Manual Phenotpying <i class="fa-solid fa-pencil"></i></button>
+  	<button class="tablinks" onclick="openApp(event, 'PCF')">PCF <i class="fa-brands fa-codepen"></i></button>
+</div>
+
+<div id="Analysis Engine" class="tabcontent">
+  <h3>Load in segmentation file</h3>
+  <p><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/analysis_engine/">launch</a></p>
+</div>
+
+<div id="GPT-powered automated phenotyping" class="tabcontent">
+  <h3>Use the latest GPT model to automate phenotpying</h3>
+  <p><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/automated_phenotyping/">launch</a></p>
+</div>
+
+<div id="Manual Phenotyping" class="tabcontent">
+  <h3>Manually annotate clusters and view updated heatmap in real time</h3>
+  <p><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/modify_clusters/">launch</a></p>
+</div>
+
+<div id="PCF" class="tabcontent">
+  <h3>Perform spatial dynamics analysis with pairwise correlation functions</h3>
+  <p><a href="https://sspapplcdcpvm01.nyumc.org/Phenoptics-Menu/pcf/">launch</a></p>
+</div>
+<img src="CODEX-tissue-akoya.png" alt="CODEX">
+<script>
+function openApp(evt, appName) {
+  var i, tabcontent, tablinks;
+  tabcontent = document.getElementsByClassName("tabcontent");
+  for (i = 0; i < tabcontent.length; i++) {
+    tabcontent[i].style.display = "none";
+  }
+  tablinks = document.getElementsByClassName("tablinks");
+  for (i = 0; i < tablinks.length; i++) {
+    tablinks[i].className = tablinks[i].className.replace(" active", "");
+  }
+  document.getElementById(appName).style.display = "block";
+  evt.currentTarget.className += " active";
+}
+</script>
+<script src="https://kit.fontawesome.com/c696b8a2eb.js" crossorigin="anonymous"></script> 
+</body>
+</html> 
+
