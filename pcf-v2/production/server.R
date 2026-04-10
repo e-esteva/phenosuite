@@ -159,7 +159,7 @@ server <- function(input, output, session) {
           
           
           p=ggviolin(aucs.m,x='variable',y='value',color = 'variable',add = 'boxplot')+geom_hline(yintercept = mean(aucs.m$value[aucs.m$variable=='All']))+geom_signif(map_signif_level = T,test.args=c('alternative'='two.sided'))+theme(legend.position = "none")+xlab('')+ylab('norm PCF')+ggtitle(glue('{cell1} Interactions'))+stat_compare_means(ref.group = 'All')+coord_flip()+stat_summary(fun = "mean",geom = "point",color = "red")
-          ggsave(glue("{tempdir1}/{label}-PCF_AUC_violins.pdf"),p,w=10,h=10)
+          ggsave(glue("{tempdir1}/{label}-PCF_AUC_violins.pdf"),p,w=16,h=10)
           print(p)
           
           incProgress(1 / 5, detail = "Done")
@@ -194,7 +194,7 @@ server <- function(input, output, session) {
           
           incProgress(1 / 5, detail = "Exporting PCF data")
           p=ggviolin(aucs.m,x='variable',y='value',color = 'variable',add = 'boxplot')+geom_hline(yintercept = mean(aucs.m$value[aucs.m$variable=='All']))+geom_signif(map_signif_level = T,test.args=c('alternative'='two.sided'))+theme(legend.position = "none")+xlab('')+ylab('norm PCF')+ggtitle(glue('{cell1} Interactions'))+stat_compare_means(ref.group = 'All')+coord_flip()+stat_summary(fun = "mean",geom = "point",color = "red")
-          ggsave(glue("{tempdir1}/{label}-PCF_AUC_violins-global.pdf"),p,w=10,h=10)
+          ggsave(glue("{tempdir1}/{label}-PCF_AUC_violins-global.pdf"),p,w=16,h=10)
           print(p)
           
           samples=unique(cell1_tbl$Patient)
@@ -209,7 +209,7 @@ server <- function(input, output, session) {
           
           
           p=ggviolin(aucs.m,x='Sample',y='value',color = 'variable',add = 'boxplot')+geom_hline(yintercept = mean(aucs.m$value[aucs.m$variable=='All']))+geom_signif(map_signif_level = T,test.args=c('alternative'='two.sided'))+xlab('')+ylab('norm PCF')+ggtitle(glue('{cell1} Interactions'))+coord_flip()+stat_summary(fun = "mean",geom = "point",color = "red")
-          ggsave(glue("{tempdir1}/{label}-PCF_AUC_violins-bySample.pdf"),p,w=10,h=10)
+          ggsave(glue("{tempdir1}/{label}-PCF_AUC_violins-bySample.pdf"),p,w=16,h=10)
           
           # individual tests:
           dir.create(glue('{tempdir1}/individual-samples/'))
@@ -218,7 +218,7 @@ server <- function(input, output, session) {
             aucs.m.tmp=aucs.m %>% subset(Sample==i)
             
             p=ggviolin(aucs.m.tmp,x='variable',y='value',color = 'variable',add = 'boxplot')+geom_hline(yintercept = mean(aucs.m.tmp$value[aucs.m.tmp$variable=='All']))+geom_signif(map_signif_level = T,test.args=c('alternative'='two.sided'))+theme(legend.position = "none")+xlab('')+ylab('norm PCF')+ggtitle(glue('{cell1} Interactions'))+stat_compare_means(ref.group = 'All')+coord_flip()+stat_summary(fun = "mean",geom = "point",color = "red")
-            ggsave(glue("{tempdir1}/individual-samples/{i}-PCF_AUC_violins.pdf"),p,w=10,h=10)
+            ggsave(glue("{tempdir1}/individual-samples/{i}-PCF_AUC_violins.pdf"),p,w=16,h=10)
           }
           
           
