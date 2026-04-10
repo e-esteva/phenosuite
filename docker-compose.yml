@@ -10,4 +10,7 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - RETICULATE_PYTHON=/opt/venv/bin/python
-    shm_size: "2g"
+      - R_MAX_VSIZE=8Gb
+    shm_size: "4g"
+    mem_limit: "8g"
+    memswap_limit: "12g"

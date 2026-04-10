@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglpk-dev \
     libfribidi-dev \
     libharfbuzz-dev \
+    libmagick++-dev \
     cmake \
     python3 \
     python3-pip \
@@ -32,11 +33,15 @@ RUN pip install --no-cache-dir \
     numpy scipy tifffile scikit-learn pandas matplotlib
 
 # ── Layer 3: Bioconductor packages ────────────────────────
-RUN R -e "install.packages('BiocManager', repos='https://cloud.r-project.org')" && \
-    R -e "BiocManager::install(c( \
-        'SpatialExperiment', 'SingleCellExperiment', 'SummarizedExperiment', \
-        'ComplexHeatmap', 'scater', 'scran', 'scuttle', 'MatrixGenerics' \
-    ), ask=FALSE, update=FALSE)"
+RUN R -e "install.packages('BiocManager', repos='https://cloud.r-project.org')"
+# Install matrixStats from current CRAN (Bioconductor 3.20 needs >= 1.4.1)
+RUN R -e "install.packages('matrixStats', repos='https://cloud.r-project.org')"
+RUN R -e "BiocManager::install('SummarizedExperiment', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('SingleCellExperiment', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('SpatialExperiment', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install(c('ComplexHeatmap','scater','scran','scuttle','MatrixGenerics'), ask=FALSE, update=FALSE, force=TRUE)"
+# Verify critical packages installed
+RUN R -e "library(SpatialExperiment); library(SingleCellExperiment); cat('Bioconductor OK\n')"
 
 # ── Layer 4: CRAN packages ───────────────────────────────
 RUN install2.r --error --skipinstalled \

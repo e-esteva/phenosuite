@@ -712,23 +712,19 @@ server <- function(input, output, session) {
         matches <- matches[matches$distance <= threshold, ]
 
       } else {
-        # Mutual nearest neighbors
+        # Mutual nearest neighbors (vectorized)
         nn_c2m <- nn2(rv$merfish_coords, rv$codex_coords, k = 1)
         nn_m2c <- nn2(rv$codex_coords, rv$merfish_coords, k = 1)
-        # CODEX i → MERFISH j, check if MERFISH j → CODEX i
-        matches_list <- list()
-        for (i in seq_len(nrow(rv$codex_coords))) {
-          j <- nn_c2m$nn.idx[i, 1]
-          if (nn_m2c$nn.idx[j, 1] == i && nn_c2m$nn.dists[i, 1] <= threshold) {
-            matches_list[[length(matches_list) + 1]] <- data.frame(
-              codex_idx = i, merfish_idx = j,
-              distance = nn_c2m$nn.dists[i, 1]
-            )
-          }
-        }
-        matches <- if (length(matches_list) > 0) do.call(rbind, matches_list)
-                   else data.frame(codex_idx = integer(0), merfish_idx = integer(0),
-                                   distance = numeric(0))
+        codex_idx <- seq_len(nrow(rv$codex_coords))
+        merfish_target <- as.integer(nn_c2m$nn.idx[, 1])
+        # Keep only pairs where MERFISH's NN points back to the same CODEX cell
+        mutual_mask <- nn_m2c$nn.idx[merfish_target, 1] == codex_idx &
+                       nn_c2m$nn.dists[, 1] <= threshold
+        matches <- data.frame(
+          codex_idx   = codex_idx[mutual_mask],
+          merfish_idx = merfish_target[mutual_mask],
+          distance    = nn_c2m$nn.dists[mutual_mask, 1]
+        )
       }
 
       # Remove duplicate MERFISH assignments (keep closest)
@@ -932,23 +928,23 @@ server <- function(input, output, session) {
     req(rv$joint_umap, rv$integrated_spe)
 
     withProgress(message = "Clustering...", value = 0.3, {
-      # Build SNN graph from UMAP
+      # Build kNN graph from UMAP
       nn <- nn2(rv$joint_umap, k = input$k_snn + 1)
-      nn_idx <- nn$nn.idx[, -1]  # remove self
-
-      # Build adjacency graph
+      nn_idx <- nn$nn.idx[, -1, drop = FALSE]  # remove self
       n_cells <- nrow(rv$joint_umap)
-      edges <- list()
-      for (i in seq_len(n_cells)) {
-        for (j in nn_idx[i, ]) {
-          edges[[length(edges) + 1]] <- c(i, j)
-        }
-      }
-      edge_mat <- do.call(rbind, edges)
+      k_neighbors <- ncol(nn_idx)
+
+      setProgress(0.5, detail = "Building graph")
+
+      # Vectorized edge list: rep each source cell k times, flatten neighbors
+      edge_mat <- cbind(
+        rep(seq_len(n_cells), each = k_neighbors),
+        as.integer(t(nn_idx))
+      )
       g <- graph_from_edgelist(edge_mat, directed = FALSE)
       g <- simplify(g)
 
-      setProgress(0.6, detail = "Leiden clustering")
+      setProgress(0.7, detail = "Leiden clustering")
 
       # Community detection (Louvain as fallback since Leiden requires leidenAlg)
       cl <- tryCatch(
