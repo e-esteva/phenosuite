@@ -24,6 +24,8 @@ suppressPackageStartupMessages({
   library(Matrix)
   library(grid)
   library(gridExtra)
+  library(SpatialExperiment)
+  library(SingleCellExperiment)
 })
 
 # ---------------------------------------------------------------------------
@@ -853,6 +855,13 @@ ui <- fluidPage(
                            class = "phen-btn-secondary", style = "width:100%; margin-bottom:10px;"),
             downloadButton("dl_expr_norm", "Normalized Expression Matrix (CSV)",
                            class = "phen-btn-secondary", style = "width:100%; margin-bottom:10px;"),
+            div(class = "section-divider"),
+            h3(span(class = "card-icon icon-export", "⬡"), "Phenomenalist Export"),
+            p(class = "help-text",
+              "Export as SpatialExperiment (.rds) for use with downstream ",
+              "Phenomenalist modules (phenotyping, spatial analysis, etc.)."),
+            downloadButton("dl_spe", "Export SpatialExperiment (.rds)",
+                           class = "phen-btn-primary", style = "width:100%; margin-bottom:10px;"),
             div(class = "section-divider"),
             h3(span(class = "card-icon icon-export", "◧"), "Figure Export"),
             selectInput("export_fig", "Select figure",
@@ -1745,7 +1754,10 @@ server <- function(input, output, session) {
     filename = function() paste0("phenomenalist_merfish_metadata_", Sys.Date(), ".csv"),
     content = function(file) {
       meta <- rv$raw_meta[rv$filt_idx, ]
-      if (!is.null(rv$clusters)) meta$cluster <- rv$clusters
+      if (!is.null(rv$clusters)) {
+        meta$cluster   <- rv$clusters
+        meta$Phenotype <- rv$clusters   # PCF compatibility
+      }
       if (!is.null(rv$umap)) {
         meta$UMAP_1 <- rv$umap[, 1]; meta$UMAP_2 <- rv$umap[, 2]
       }
@@ -1773,6 +1785,59 @@ server <- function(input, output, session) {
   output$dl_expr_norm <- downloadHandler(
     filename = function() paste0("phenomenalist_merfish_norm_expr_", Sys.Date(), ".csv"),
     content = function(file) { write.csv(rv$norm_expr, file) }
+  )
+
+  # ---- SPE EXPORT ----
+  # Build a SpatialExperiment object compatible with downstream Phenomenalist
+  # modules: phenotyping, spatial analysis, clustering, and visualization apps.
+  output$dl_spe <- downloadHandler(
+    filename = function() paste0("phenomenalist_merfish_spe_", Sys.Date(), ".rds"),
+    content = function(file) {
+      req(rv$norm_expr, rv$coords, rv$filt_idx)
+
+      # Expression matrix: transpose to genes × cells (SPE convention)
+      expr_mat <- t(rv$norm_expr)
+
+      # Build assay list — "exprs" and "logcounts" for downstream compatibility
+      assay_list <- list(exprs = expr_mat, logcounts = expr_mat)
+
+      # Add raw counts if available
+      if (!is.null(rv$raw_expr)) {
+        raw_filt <- rv$raw_expr[rv$filt_idx, , drop = FALSE]
+        assay_list[["counts"]] <- t(raw_filt)
+      }
+
+      # Spatial coordinates (filtered cells)
+      sp_coords <- rv$coords[rv$filt_idx, , drop = FALSE]
+      colnames(sp_coords) <- c("x", "y")
+
+      # Cell metadata
+      meta <- rv$raw_meta[rv$filt_idx, , drop = FALSE]
+      if (!is.null(rv$clusters)) {
+        meta$cluster         <- rv$clusters
+        meta$cluster_merfish <- rv$clusters
+        meta$Phenotype       <- rv$clusters   # PCF compatibility
+      }
+
+      # Create SpatialExperiment
+      spe <- SpatialExperiment(
+        assays      = assay_list,
+        colData     = DataFrame(meta),
+        spatialCoords = sp_coords
+      )
+
+      # Add UMAP to reducedDims if computed
+      if (!is.null(rv$umap)) {
+        reducedDim(spe, "UMAP") <- rv$umap
+      }
+
+      # Add PCA to reducedDims if computed
+      if (!is.null(rv$pca)) {
+        reducedDim(spe, "PCA") <- rv$pca
+      }
+
+      saveRDS(spe, file)
+    }
   )
 
   # Figure export

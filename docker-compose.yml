@@ -1,0 +1,13 @@
+services:
+  phenosuite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3838:3838"
+    volumes:
+      - .:/srv/shiny-server/phenosuite
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - RETICULATE_PYTHON=/opt/venv/bin/python
+    shm_size: "2g"
