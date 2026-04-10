@@ -35,27 +35,6 @@ That's it. The landing page will load with all apps accessible.
 
 > **Using `docker-compose` instead of `docker compose`?** If you have the legacy `docker-compose` binary (hyphenated), it works the same way: `docker-compose up --build`.
 
-### Common commands
-
-```bash
-# Start in background (detached mode)
-docker compose up -d
-
-# View logs
-docker compose logs -f phenosuite
-
-# Stop the container
-docker compose down
-
-# Restart (picks up code changes — repo is bind-mounted)
-docker compose restart
-
-# Shell into the running container
-docker compose exec phenosuite bash
-
-# View Shiny app-level logs (useful for debugging a crashed app)
-docker compose exec phenosuite bash -c "cat /var/log/shiny-server/*.log"
-```
 
 ### Environment variables
 
@@ -206,7 +185,27 @@ The container uses a single-image approach:
 6. **Export** — RDS (SpatialExperiment), CSV metadata, PDF figures
 
 ---
+### Common commands
 
+```bash
+# Start in background (detached mode)
+docker compose up -d
+
+# View logs
+docker compose logs -f phenosuite
+
+# Stop the container
+docker compose down
+
+# Restart (picks up code changes — repo is bind-mounted)
+docker compose restart
+
+# Shell into the running container
+docker compose exec phenosuite bash
+
+# View Shiny app-level logs (useful for debugging a crashed app)
+docker compose exec phenosuite bash -c "cat /var/log/shiny-server/*.log"
+```
 ## Troubleshooting
 
 **Build fails with "unknown command: docker compose"**
