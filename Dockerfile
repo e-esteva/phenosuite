@@ -24,13 +24,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    python3-dev \
+    libpython3.10 \
+    libtirpc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Layer 2: Python virtual environment ───────────────────
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir \
-    numpy scipy tifffile scikit-learn pandas matplotlib
+    "numpy<2" "pandas<2" \
+    scipy tifffile scikit-learn matplotlib seaborn \
+    "rpy2==3.5.17"
 
 # ── Layer 3: Bioconductor packages ────────────────────────
 RUN R -e "install.packages('BiocManager', repos='https://cloud.r-project.org')"
