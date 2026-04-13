@@ -300,10 +300,32 @@ server <- function(input, output, session) {
       markers <- unique(markers)
       markers <- markers[markers != "" & markers != "_"]
     } else {
-      # Fallback - exclude common non-marker columns
-      exclude_cols <- c('X','label','x_min','x_max','y_min','y_max','x','y','size', 
-                        'cell_id', 'object_id', 'area', 'perimeter')
-      markers <- cols[!(tolower(cols) %in% tolower(exclude_cols))]
+      # Fallback - exclude common non-marker columns (coordinates, morphology, metadata)
+      # Exact matches (case-insensitive)
+      exclude_exact <- c('x','y','x_min','x_max','y_min','y_max',
+                         'xmin','xmax','ymin','ymax',
+                         'centroid_x','centroid_y',
+                         'centroid_x_um','centroid_y_um',
+                         'centroid_x_px','centroid_y_px',
+                         'ctrx','ctry',
+                         'cell_x_position','cell_y_position',
+                         'center_x','center_y',
+                         'x_x','y_y',
+                         'label','size','cell_id','object_id',
+                         'area','perimeter','sample_name',
+                         'tissue_category','phenotype','classification',
+                         'orig_object','tile_index',
+                         'area_convex','min_rot_rect','extent','orientation',
+                         'elongation','compactness_circle','compactness_square',
+                         'euler_number')
+      # Substring matches (case-insensitive) — any column containing these terms
+      exclude_substr <- c('centroid','geometry','object','eccentricity',
+                          'bbox','convexity','axis','diameter','solidity',
+                          'euler')
+      cols_lower <- tolower(cols)
+      is_exact   <- cols_lower %in% exclude_exact
+      is_substr  <- Reduce(`|`, lapply(exclude_substr, function(p) grepl(p, cols_lower, fixed = TRUE)))
+      markers <- cols[!(is_exact | is_substr)]
     }
     message("extract_all_markers found: ", paste(markers, collapse = ", "))
     return(markers)
