@@ -49,7 +49,7 @@ server <- function(input, output, session) {
   outputOptions(output, "data_processed", suspendWhenHidden = FALSE)
 
   # ── Session temp directory ─────────────────────────────────────────
-  tempdir0 <- file.path("/apps/home/rtmp", session$token)
+  tempdir0 <- file.path(Sys.getenv("PHENOSUITE_TMPDIR", tempdir()), session$token)
   dir.create(tempdir0, showWarnings = FALSE, recursive = TRUE)
   tracker <- ProvenanceTracker$new("masquerade", session, tempdir0)
 

@@ -102,7 +102,7 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   
   # ===== SUB-CLUSTERING FUNCTIONS =====
-  tempdir0=glue('/apps/home/rtmp/{session$token}')
+  tempdir0=glue('{Sys.getenv("PHENOSUITE_TMPDIR", tempdir())}/{session$token}')
   dir.create(tempdir0)
   sub_tracker <- ProvenanceTracker$new("modify_spe_sub_clustering", session, tempdir0)
   sub_tracker$record_known_seeds()

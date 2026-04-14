@@ -7,10 +7,15 @@ services:
       - "3838:3838"
     volumes:
       - .:/srv/shiny-server/phenosuite
+      - session_tmp:/apps/home/rtmp
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - RETICULATE_PYTHON=/opt/venv/bin/python
       - R_MAX_VSIZE=8Gb
+      - PHENOSUITE_TMPDIR=/apps/home/rtmp
     shm_size: "4g"
     mem_limit: "8g"
     memswap_limit: "12g"
+
+volumes:
+  session_tmp:

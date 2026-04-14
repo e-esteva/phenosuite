@@ -337,7 +337,7 @@ server <- shinyServer(function(input, output, session) {
 
   # ── Temp dir (per session) ────────────────────────────────────────────
   tempdir0 <- local({
-    d <- glue('/apps/home/rtmp/{session$token}')
+    d <- glue('{Sys.getenv("PHENOSUITE_TMPDIR", tempdir())}/{session$token}')
     dir.create(d, showWarnings = FALSE, recursive = TRUE)
     as.character(d)
   })

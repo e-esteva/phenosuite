@@ -229,6 +229,73 @@ Code changes are picked up automatically because the repo is bind-mounted, but S
 
 ---
 
+## Docker Usage (Advanced)
+
+### Routing session temp storage to a fast, high-capacity disk
+
+Several PhenoSuite apps write large intermediate files during a session — multi-gigabyte TIFF masks from **Masquerade**, cached spatial experiment objects, PCF/log-odds outputs, etc. By default these live on Docker's root filesystem, which may be small on laptops or shared servers. If you have a dedicated SSD (or any host path with plenty of free space), you can bind-mount it into the container and point every app's temp directory at it.
+
+Edit `docker-compose.yml`:
+
+```yaml
+services:
+  phenosuite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3838:3838"
+    volumes:
+      - .:/srv/shiny-server/phenosuite
+      # Replace the left-hand path with any directory on a fast, high-capacity disk.
+      # On Linux, a dedicated SSD mount works well (e.g. /mnt/fast-ssd/phenosuite-sessions).
+      # On macOS/Windows, any host path accessible to Docker Desktop is fine.
+      - /mnt/fast-ssd/phenosuite-sessions:/apps/home/rtmp
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - RETICULATE_PYTHON=/opt/venv/bin/python
+      - R_MAX_VSIZE=8Gb
+      # PhenoSuite-aware apps (masquerade, modify_spe, automated_phenotyping, …)
+      # read this variable to place per-session temp dirs on the mounted SSD.
+      - PHENOSUITE_TMPDIR=/apps/home/rtmp
+      # TMPDIR redirects R's built-in tempdir() for every other app that uses
+      # the default (tempfile(), write.csv to tempdir(), etc.).
+      - TMPDIR=/apps/home/rtmp
+    shm_size: "4g"
+    mem_limit: "8g"
+    memswap_limit: "12g"
+```
+
+**How it works:**
+
+- `PHENOSUITE_TMPDIR` is read by apps that have been updated to support it. They fall back to R's `tempdir()` when the variable is unset, so the configuration also works out of the box without any bind-mount.
+- `TMPDIR` is the standard POSIX/R temp directory variable — setting it reroutes every other app (including anything spawned by `reticulate`) to the same disk.
+- Both variables point at `/apps/home/rtmp` inside the container, which is the mount point for your host SSD.
+
+**Host path requirements:**
+
+- The host directory must exist before `docker compose up` — Docker will bind-mount it as-is.
+- The `shiny` user inside the container runs as **UID 999**. Make the host directory writable by that UID:
+  ```bash
+  sudo mkdir -p /mnt/fast-ssd/phenosuite-sessions
+  sudo chown 999:999 /mnt/fast-ssd/phenosuite-sessions
+  ```
+  On macOS/Windows with Docker Desktop, the file-sharing layer handles permissions automatically — just make sure the path is listed under Settings → Resources → File Sharing.
+
+**When this matters most:**
+
+- **Masquerade** — generates full-resolution cluster masks on multiplexed TIFFs; a single session can produce 2–10 GB of output.
+- **MERFISH / Spatial Exploration / Multi-modal integration** — large `SpatialExperiment` RDS files are written and re-read during a run.
+- **Long-running analyses** — intermediate state accumulates across steps; running out of temp space mid-run aborts the job with a cryptic error.
+
+If you stick with the default configuration (no bind-mount), a Docker-managed named volume (`session_tmp`) is used instead. That volume lives on Docker's own storage and is fine for small-to-medium datasets.
+
+### Giving Shiny more memory
+
+The `mem_limit` / `memswap_limit` / `shm_size` keys in `docker-compose.yml` cap how much RAM the container can use. If Shiny workers keep getting OOM-killed on large datasets (look for `Terminated` in the logs), raise these limits and make sure Docker Desktop itself has been granted at least that much memory under Settings → Resources.
+
+---
+
 ## Running Locally Without Docker (Advanced)
 
 If you prefer running individual apps in RStudio:
