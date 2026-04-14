@@ -68,6 +68,7 @@ server <- function(input, output,session) {
     if(is.null(inFile)){
       return(NULL)
     }else{
+      tracker$register_input(inFile, input_id = "log_odds")
       tbls <- lapply(seq(length(inFile$datapath)),function(x){
         tmp=read.csv(glue("{inFile$datapath[x]}"),row.names = 1)
         colnames(tmp)=row.names(tmp)
@@ -75,7 +76,7 @@ server <- function(input, output,session) {
       } )
       return(tbls)
     }
-    
+
   })
   
   
@@ -175,10 +176,13 @@ server <- function(input, output,session) {
       }
       
       if(input$Run > 0){
-        
+
+        tracker$capture_parameters(input)
+        tracker$analysis_started()
+
         celltypes=input$celltype_selection
         message(paste0(celltypes,collapse=","))
-        
+
         if(input$action == 'Integrate'){
           label=glue('{label}-integrated')
           for(i in seq(length(log_odds_))){
@@ -280,9 +284,10 @@ server <- function(input, output,session) {
 	    # to adjust discontinuous values automatically to median instead of 0 for median:
 	    renderCircos(log_odds[[i]],label = label.tmp,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,discontinuity=ifelse(discontinuity.check > 0,T,F),col.fun=col_fun.h,label_size.cex=input$label_size)
           }
-          
-          
+
+
         }
+        tracker$analysis_completed()
       }
       
       

@@ -13,6 +13,7 @@ require(tidyverse)
 source('/srv/shiny-server/Phenoptics-Menu/utils//RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
 source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
 source('/srv/shiny-server/Phenoptics-Menu/utils/heatmap-by-cluster.R')
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 # Phenotyping template function - EXACT COPY OF YOUR WORKING VERSION
 assign_celltype_with_template <- function(obj, phenotyping_template, cluster, mclust = T){
@@ -100,6 +101,7 @@ server <- shinyServer(function(input, output, session) {
     if (is.null(inFile))
       return(NULL)
     if(!is.null(inFile)){
+      tracker$register_input(inFile, input_id = "file1")
       spe <- readRDS(inFile$datapath)
       return(spe)
     }
@@ -308,15 +310,19 @@ server <- shinyServer(function(input, output, session) {
   dir.create(tempdir)
   print(as.character(tempdir))
   tempdir0 <- as.character(tempdir)
-  print(tempdir0) 
-  
+  print(tempdir0)
+  tracker <- ProvenanceTracker$new("modify_clusters", session, tempdir0)
+
   output$plots_new <- renderPlot({
     spe <- mydata0()
     group <- input$rb0
-    
+
     render <- input$render
     if(render == 1){
-      
+
+      tracker$capture_parameters(input)
+      tracker$analysis_started()
+
       withProgress(message = 'Running Analysis', value = 0, {
         incProgress(1/3, detail = 'Generating new annotations')
         if ('Seurat' %in% class(spe)){
@@ -416,6 +422,7 @@ server <- shinyServer(function(input, output, session) {
         prepare_pcf_inputs(spe = spe, out_dir = tempdir0, group = group)
         incProgress(1/3, detail = 'Done')
       })
+      tracker$analysis_completed()
     }
   })
   

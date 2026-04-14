@@ -6,14 +6,15 @@ source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 server <- function(input, output,session) {
   # return spe object:
   mydata0 <- reactive({
-    
+
     inFile <- input$file1
-    
+
     if (is.null(inFile)){
       return(NULL)
     }else{
+      tracker$register_input(inFile, input_id = "file1")
       spe = readRDS(inFile$datapath)
-      
+
       return(spe)
     }
      
@@ -117,6 +118,8 @@ server <- function(input, output,session) {
     }
     
     if(input$run > 0){
+      tracker$capture_parameters(input)
+      tracker$analysis_started()
       withProgress(message = glue("Sub-Clustering {group}"), value = 0, {
         
         
@@ -183,7 +186,8 @@ server <- function(input, output,session) {
         spatial_df$cluster=spe[[i]]
         write.csv(spatial_df,glue('{tempdir0}/mask-inputs/{i}-spatial_anno.csv'))
       }
-      
+
+      tracker$analysis_completed()
       return(list(spe,new_col_name))
       
     }else{

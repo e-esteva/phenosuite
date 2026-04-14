@@ -116,6 +116,7 @@ server <- function(input, output, session) {
   # ── Upload ─────────────────────────────────────────────────────────────────
   observeEvent(input$rds_file, {
     req(input$rds_file)
+    tracker$register_input(input$rds_file, input_id = "rds_file")
     tryCatch({
       obj <- readRDS(input$rds_file$datapath)
       stopifnot(is(obj, "SpatialExperiment") || is(obj, "SingleCellExperiment"))
@@ -544,6 +545,24 @@ server <- function(input, output, session) {
     content = function(file) {
       saveRDS(spe(), file)
     }
+  )
+
+  # Provenance bundle (provenance.json + replay.R)
+  output$dl_provenance <- downloadHandler(
+    filename = function() paste0("spatialExploreR_provenance_", Sys.Date(), ".zip"),
+    content = function(file) {
+      tracker$capture_parameters(input)
+      if (is.null(tracker$analysis_start)) tracker$analysis_started()
+      tracker$analysis_completed()
+      sidecar_files <- c("provenance.json", "replay.R")
+      sidecar_files <- sidecar_files[file.exists(file.path(prov_dir, sidecar_files))]
+      if (length(sidecar_files) == 0) {
+        writeLines("Provenance sidecar not available.", file)
+        return()
+      }
+      zip::zip(zipfile = file, files = sidecar_files, root = prov_dir)
+    },
+    contentType = "application/zip"
   )
 }
 

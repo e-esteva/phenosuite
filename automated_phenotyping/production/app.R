@@ -346,6 +346,7 @@ server <- shinyServer(function(input, output, session) {
   # ── Load SPE ──────────────────────────────────────────────────────────
   mydata0 <- reactive({
     req(input$file1)
+    tracker$register_input(input$file1, input_id = "file1")
     readRDS(input$file1$datapath)
   })
 
@@ -565,6 +566,9 @@ server <- shinyServer(function(input, output, session) {
 
     rv$run_complete <- FALSE
     temp_env$use_temp <- TRUE   # reset per-run
+
+    tracker$capture_parameters(input)
+    tracker$analysis_started()
 
     new_clusters_ <- as.character(spe[[group]])
     new_clusters_ <- gsub("[+]", "pos", new_clusters_)
@@ -793,6 +797,7 @@ server <- shinyServer(function(input, output, session) {
       incProgress(0.10, detail = "Done \u2713")
     })
 
+    tracker$analysis_completed()
     showNotification("Phenotyping complete.", type = "message", duration = 5)
   })
 

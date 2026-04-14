@@ -63,6 +63,15 @@ server <- function(input, output, session) {
     # Validate required inputs
     req(input$spatial_metadata, input$image_source, input$run_label)
 
+    # Provenance: register inputs + capture params
+    tracker$register_input(input$image_source, input_id = "image_source")
+    tracker$register_input(input$spatial_metadata, input_id = "spatial_metadata")
+    if (!is.null(input$marker_whitelist)) {
+      tracker$register_input(input$marker_whitelist, input_id = "marker_whitelist")
+    }
+    tracker$capture_parameters(input)
+    tracker$analysis_started()
+
     rv$data_processed <- FALSE
     rv$outPath <- NULL
 
@@ -122,6 +131,9 @@ server <- function(input, output, session) {
       incProgress(1.0, detail = "Done")
     })
 
+    # Provenance: write sidecar alongside TIFF in tempdir0
+    tracker$analysis_completed()
+
     showNotification("Masks generated successfully.", type = "message", duration = 4)
   })
 
@@ -141,11 +153,11 @@ server <- function(input, output, session) {
     }
   })
 
-  # ── Download handler (chunked copy) ────────────────────────────────
+  # ── Download handler (zip bundle incl. provenance sidecar) ─────────
   output$mask_download_chunked <- downloadHandler(
     filename = function() {
       req(rv$outPath)
-      basename(rv$outPath)
+      paste0(tools::file_path_sans_ext(basename(rv$outPath)), ".zip")
     },
     content = function(file) {
       req(rv$outPath)
@@ -161,11 +173,14 @@ server <- function(input, output, session) {
         showNotification("Preparing download…", type = "message",
                          duration = NULL, id = "dl_note")
 
-        file.copy(source_file, file, overwrite = TRUE)
+        # Ensure provenance sidecar exists alongside the TIFF in tempdir0
+        if (is.null(tracker$analysis_end)) tracker$analysis_completed()
 
-        if (file.size(file) != file.size(source_file)) {
-          stop("File copy incomplete.")
-        }
+        zip::zip(
+          zipfile = file,
+          files   = dir(tempdir0),
+          root    = tempdir0
+        )
 
         removeNotification("dl_note")
         showNotification("Download ready!", type = "message", duration = 3)
@@ -176,6 +191,6 @@ server <- function(input, output, session) {
         writeLines(paste("Download failed:", e$message), file)
       })
     },
-    contentType = "image/tiff"
+    contentType = "application/zip"
   )
 }

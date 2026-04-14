@@ -561,6 +561,7 @@ server <- function(input, output, session) {
 
   # ── Load CODEX SPE ──
   observeEvent(input$codex_file, {
+    tracker$register_input(input$codex_file, input_id = "codex_file")
     tryCatch({
       obj <- readRDS(input$codex_file$datapath)
       if (!is(obj, "SpatialExperiment") && !is(obj, "SingleCellExperiment")) {
@@ -580,6 +581,7 @@ server <- function(input, output, session) {
 
   # ── Load MERFISH SPE ──
   observeEvent(input$merfish_file, {
+    tracker$register_input(input$merfish_file, input_id = "merfish_file")
     tryCatch({
       obj <- readRDS(input$merfish_file$datapath)
       if (!is(obj, "SpatialExperiment") && !is(obj, "SingleCellExperiment")) {
@@ -837,6 +839,8 @@ server <- function(input, output, session) {
   # ── Build integrated SPE + joint UMAP ──
   observeEvent(input$run_integration, {
     req(rv$codex_spe, rv$merfish_spe, rv$match_idx)
+    tracker$capture_parameters(input)
+    if (is.null(tracker$analysis_start)) tracker$analysis_started()
     m <- rv$match_idx
     if (nrow(m) < 10) {
       showNotification("Too few matched cells (<10). Adjust threshold.", type = "error")
@@ -1095,6 +1099,24 @@ server <- function(input, output, session) {
   # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   # TAB 4: Export
   # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Provenance bundle (provenance.json + replay.R)
+  output$dl_provenance <- downloadHandler(
+    filename = function() paste0("phenomenalist_multimodal_provenance_", Sys.Date(), ".zip"),
+    content = function(file) {
+      tracker$capture_parameters(input)
+      if (is.null(tracker$analysis_start)) tracker$analysis_started()
+      tracker$analysis_completed()
+      sidecar_files <- c("provenance.json", "replay.R")
+      sidecar_files <- sidecar_files[file.exists(file.path(prov_dir, sidecar_files))]
+      if (length(sidecar_files) == 0) {
+        writeLines("Provenance sidecar not available.", file)
+        return()
+      }
+      zip::zip(zipfile = file, files = sidecar_files, root = prov_dir)
+    },
+    contentType = "application/zip"
+  )
 
   output$dl_integrated_spe <- downloadHandler(
     filename = function() paste0("phenomenalist_integrated_spe_", Sys.Date(), ".rds"),

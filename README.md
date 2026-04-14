@@ -143,6 +143,105 @@ Both steps are automatic and run after the per-cluster annotation finishes — t
 
 ---
 
+## Provenance Sidecar (Reproducibility)
+
+Every PhenoSuite app bundles a **provenance sidecar** into its output ZIP. The sidecar is a pair of files — `provenance.json` and `replay.R` — written to the session temp dir alongside the normal analysis outputs, so they travel with the download automatically. Together they capture enough information to audit, re-run, or cite an analysis after the fact without needing access to the original Shiny session.
+
+### What's captured
+
+`provenance.json` records:
+
+| Field | Contents |
+|---|---|
+| `app_name` | Which PhenoSuite app ran (`masquerade`, `merfish`, `automated_phenotyping`, …) |
+| `session_id` | Shiny session token — unique per browser tab |
+| `timestamps` | `session_start`, `analysis_start`, `analysis_end` (ISO-8601 with timezone) |
+| `environment.r_version` | Full R version string from `sessionInfo()` |
+| `environment.platform` | OS / architecture |
+| `environment.docker_image_digest` | Docker image digest (from `PHENOSUITE_IMAGE_DIGEST` build arg) |
+| `environment.git_sha` | Git commit SHA of the repo at build time (from `PHENOSUITE_GIT_SHA`) |
+| `environment.packages` | Every attached and loaded R package, with version |
+| `inputs[]` | For each uploaded file: original name, size in bytes, **SHA-256** hash |
+| `parameters` | Every Shiny input control (sliders, dropdowns, text boxes, checkboxes) captured at analysis-start time, with `fileInput` entries stripped |
+| `seeds` | Named random seeds used during the run (e.g. `clustering_leiden`, `downsampling`) |
+| `outputs[]` | Every file written to the temp dir, with relative path, size, and SHA-256 |
+| `custom_metadata` | App-specific extras — e.g. `interactive_gating` stores the full gate tree, `analysis_engine_multi_config` stores the per-sample config table, `spatial_gating` stores the drawn polygon geometry |
+
+`replay.R` is an auto-generated, self-contained R script that:
+
+1. `library()`-loads every package that was attached during the original run
+2. Re-seeds any random generators via the `seeds` table
+3. Declares a `params <- list(...)` block pre-populated with the captured UI values
+4. Declares an `input_files <- c(...)` block with the original file names
+5. **Verifies every input file's SHA-256** against the hash in the sidecar before proceeding — mismatched inputs produce a warning with the expected/actual digests so you know immediately if a file has been modified or corrupted
+6. Creates a `replay_output/` directory and, for apps with a registered replay template, calls the relevant `phenomenalist` / `RunPhenomenalist-shiny` function with the captured parameters. Apps without a template get a commented block listing the params and input files so a human can finish the script
+
+The script is written to be runnable via `Rscript replay.R` inside any PhenoSuite container — the Docker image digest in the sidecar tells you exactly which image version to pull.
+
+### Which apps produce it
+
+The sidecar is enforced across **every app served from the landing page**. The table below lists each app, which touch points are wired, and any app-specific notes:
+
+| Module | App | Inputs hashed | Params captured | Outputs hashed | Notes |
+|---|---|---|---|---|---|
+| **Analysis Engine** | Launch Analysis Engine (`analysis_engine_multi_config_streamline`) | ✓ (all uploaded segmentation / config files) | ✓ | ✓ | Per-sample config table stored in `custom_metadata.sample_configs`; known seeds pre-recorded |
+| | Spatial Gating of Segmentation File (`analysis_pre_processing/spatial_gating`) | ✓ | ✓ | ✓ | Drawn polygon vertices stored in `custom_metadata.gates`; written on **Download Gated Cells** |
+| | Compare Segmentation Files (`analysis_pre_processing/segmentation_file_analysis`) | ✓ (multi-file) | ✓ | ✓ | Plots are written directly into the provenance dir; download handler zips the full dir |
+| | Compare SPE Objects (`analysis_pre_processing/spe_analysis`) | ✓ (multi-RDS) | ✓ | ✓ | Same pattern as segmentation_file_analysis |
+| | MERFISH Spatial Transcriptomics (`merfish`) | ✓ (expression + metadata) | ✓ | ✓ | Dedicated `dl_provenance` download button because outputs are many individual files |
+| | Merge / Integrate SPE Objects (`merging_integration`) | ✓ (all SPEs) | ✓ | ✓ | Sidecar copied into the merged RDS bundle |
+| | Explore SPE Objects (`spatialExploreR`) | ✓ | ✓ | ✓ | Dedicated `dl_provenance` download button |
+| | CODEX + MERFISH Integration (`multimodal_integration`) | ✓ (CODEX + MERFISH SPEs) | ✓ | ✓ | Dedicated `dl_provenance` download button |
+| **Phenotyping** | Sub-cluster / Re-cluster (`modify_spe`) | ✓ | ✓ | ✓ | Two independent trackers — one per sub-clustering / re-clustering panel; known seeds pre-recorded |
+| | Sub-clustering (legacy `sub_clustering`) | ✓ | ✓ | ✓ | Still enforced even though not linked from the homepage |
+| | Interactive Gating (`interactive_gating/production`) | ✓ | ✓ (captured at gate-apply time) | ✓ | Full gate tree (hierarchy + thresholds) stored in `custom_metadata.gate_tree`; sidecar finalised inside the **Download All** handler |
+| | Automated Phenotyping (`automated_phenotyping`) | ✓ | ✓ | ✓ | Captures GPT prompt algorithm, model selection, tissue context, and per-cluster usage reports |
+| | Manually Annotate Clusters (`modify_clusters/dev`) | ✓ | ✓ | ✓ | Dev variant is the one linked from the homepage; production variant is also wired |
+| | Masquerade (`masquerade`) | ✓ (image + spatial metadata + optional marker whitelist) | ✓ | ✓ | Sidecar bundled into the download ZIP alongside the TIFF |
+| **Spatial** | Pair Correlation Function (`pcf-v2`) | ✓ (multi-CSV) | ✓ | ✓ | |
+| | Pairwise Log-Odds Interactions (`spatial_interactions`) | ✓ | ✓ | ✓ | |
+| **Graphics** | PCF Builder (`pcf-builder`) | ✓ | ✓ | ✓ | |
+| | Circos Artist (`circos-artist`) | ✓ | ✓ | ✓ | |
+| | Circos Builder (`circos-builder/dev`) | ✓ (multi log-odds CSV) | ✓ | ✓ | Dev variant is linked from the homepage; production variant is also wired |
+
+Every app uses the same `ProvenanceTracker` R5 class defined in `utils/provenance.R`. Touch points are deliberately small (source + init + `register_input` + `capture_parameters` + `analysis_started` + `analysis_completed`), so adding the sidecar to a new app is ~10 lines of boilerplate.
+
+### Using the sidecar
+
+```r
+# Inside any replay environment:
+library(jsonlite)
+prov <- fromJSON("provenance.json", simplifyVector = FALSE)
+
+# Check which image produced this output
+prov$environment$docker_image_digest
+prov$environment$git_sha
+
+# Verify outputs haven't been tampered with
+for (out in prov$outputs) {
+  actual <- digest::digest(file = out$relative_path, algo = "sha256")
+  stopifnot(actual == out$sha256)
+}
+
+# Re-run the analysis headlessly
+Rscript replay.R
+```
+
+### Configuring the image digest / git SHA
+
+To make replay bulletproof, pass the image digest and git SHA at build time so they end up baked into every sidecar:
+
+```bash
+docker build \
+  --build-arg GIT_SHA=$(git rev-parse HEAD) \
+  --build-arg IMAGE_DIGEST=$(docker image inspect phenosuite:latest --format '{{index .RepoDigests 0}}') \
+  -t phenosuite:latest .
+```
+
+If the build args are unset the sidecar still works — the corresponding fields just read `"unknown"`.
+
+---
+
 ## Multi-Modal Integration (CODEX + MERFISH)
 
 A dedicated Shiny app integrates CODEX protein and MERFISH transcript data from the same tissue:

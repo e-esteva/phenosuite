@@ -1001,6 +1001,7 @@ server <- function(input, output, session) {
 
   # ---- FILE IMPORT ----
   observeEvent(input$meta_file, {
+    tracker$register_input(input$meta_file, input_id = "meta_file")
     ext <- tools::file_ext(input$meta_file$name)
     sep <- if (ext %in% c("tsv", "txt")) "\t" else ","
     df <- read.csv(input$meta_file$datapath, sep = sep, stringsAsFactors = FALSE)
@@ -1015,6 +1016,10 @@ server <- function(input, output, session) {
 
   observeEvent(input$btn_load, {
     req(input$expr_file, input$meta_file, input$x_col, input$y_col)
+    tracker$register_input(input$expr_file, input_id = "expr_file")
+    tracker$register_input(input$meta_file, input_id = "meta_file")
+    tracker$capture_parameters(input)
+    tracker$analysis_started()
     withProgress(message = "Loading data...", value = 0.3, {
       ext_e <- tools::file_ext(input$expr_file$name)
       sep_e <- if (ext_e %in% c("tsv", "txt")) "\t" else ","
@@ -1405,6 +1410,8 @@ server <- function(input, output, session) {
   # ---- CLUSTERING ----
   observeEvent(input$btn_cluster, {
     req(rv$pca, rv$knn_idx)
+    tracker$capture_parameters(input)
+    if (is.null(tracker$analysis_start)) tracker$analysis_started()
     rv$status <- "clustering..."
     withProgress(message = "Running SNN clustering...", value = 0.3, {
       # Re-compute KNN if k changed
@@ -1610,6 +1617,8 @@ server <- function(input, output, session) {
   # Spatially variable genes
   observeEvent(input$btn_svg, {
     req(rv$norm_expr, rv$coords, rv$filt_idx)
+    tracker$capture_parameters(input)
+    if (is.null(tracker$analysis_start)) tracker$analysis_started()
     withProgress(message = "Detecting spatially variable genes...", value = 0.1, {
       coords_filt <- rv$coords[rv$filt_idx, ]
       nn <- nn2(coords_filt, k = input$svg_k + 1)
@@ -1653,6 +1662,8 @@ server <- function(input, output, session) {
   # ---- DIFFERENTIAL EXPRESSION ----
   observeEvent(input$btn_de, {
     req(rv$norm_expr, rv$clusters, input$de_group1)
+    tracker$capture_parameters(input)
+    if (is.null(tracker$analysis_start)) tracker$analysis_started()
     rv$status <- "running DE..."
     withProgress(message = "Running differential expression...", value = 0.2, {
       g1 <- input$de_group1
@@ -1754,6 +1765,24 @@ server <- function(input, output, session) {
   })
 
   # ---- EXPORT ----
+  # Provenance bundle (provenance.json + replay.R)
+  output$dl_provenance <- downloadHandler(
+    filename = function() paste0("phenomenalist_merfish_provenance_", Sys.Date(), ".zip"),
+    content = function(file) {
+      tracker$capture_parameters(input)
+      if (is.null(tracker$analysis_start)) tracker$analysis_started()
+      tracker$analysis_completed()
+      sidecar_files <- c("provenance.json", "replay.R")
+      sidecar_files <- sidecar_files[file.exists(file.path(prov_dir, sidecar_files))]
+      if (length(sidecar_files) == 0) {
+        writeLines("Provenance sidecar not available.", file)
+        return()
+      }
+      zip::zip(zipfile = file, files = sidecar_files, root = prov_dir)
+    },
+    contentType = "application/zip"
+  )
+
   output$dl_metadata <- downloadHandler(
     filename = function() paste0("phenomenalist_merfish_metadata_", Sys.Date(), ".csv"),
     content = function(file) {

@@ -17,17 +17,17 @@ server <- function(input, output,session) {
    
   # return spatial coords file:
   mydata0 <- reactive({
-    
+
     inFile <- input$file1
-    
+
     if (is.null(inFile))
       return(NULL)
-    
-    
+
+    tracker$register_input(inFile, input_id = "file1")
     tbl = read.csv(inFile$datapath,row.names=1)
-    
+
     colnames(tbl)=row.names(tbl)
-    
+
     return(tbl)
   })
   
@@ -190,8 +190,10 @@ server <- function(input, output,session) {
     
     
     if(input$Run > 0){
-      
-      
+
+      tracker$capture_parameters(input)
+      tracker$analysis_started()
+
       was_transformed <- FALSE
       label=input$run_label
       if(sum(is.infinite(log_odds)) > 0){
@@ -200,6 +202,7 @@ server <- function(input, output,session) {
 	was_transformed <- TRUE
       }
       renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed)
+      tracker$analysis_completed()
     }
     
     

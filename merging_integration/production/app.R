@@ -189,7 +189,12 @@ server <- function(input, output, session) {
   # Process data when button is clicked
   observeEvent(input$process, {
     if (is.null(input$files)) return()
-    
+
+    # Provenance: register inputs + capture parameters
+    tracker$register_input(input$files, input_id = "files")
+    tracker$capture_parameters(input)
+    tracker$analysis_started()
+
     # Initialize progress
     updateProgressBar(session = session, id = "progress_bar", value = 0, title = "Starting...")
     session$sendCustomMessage(type = "updateProgressText", message = "Initializing processing...")
@@ -333,9 +338,13 @@ server <- function(input, output, session) {
       output$status <- renderText(final_message)
       
       # Update progress text
-      session$sendCustomMessage(type = "updateProgressText", 
+      session$sendCustomMessage(type = "updateProgressText",
                                 message = paste("✓ All done!", nrow(combined_spe), "features ×", ncol(combined_spe), "cells"))
-      
+
+      # Provenance: write sidecar in prov_dir
+      tryCatch(tracker$analysis_completed(),
+               error = function(e) message("[provenance] ", e$message))
+
       # Switch to results tab after a brief delay
       Sys.sleep(1)
       updateTabItems(session, "tabs", "results")
@@ -407,21 +416,33 @@ server <- function(input, output, session) {
         # Save processed data
         rds_file <- file.path(temp_dir, "processed_spatial_experiment.rds")
         saveRDS(values$processed_data, rds_file)
-        
+
         # Save UMAP plot
         if (!is.null(values$umap_plot)) {
           plot_file <- file.path(temp_dir, "umap_plot.png")
           ggsave(plot_file, values$umap_plot, width = 10, height = 8, dpi = 300)
         }
-        
+
         # Save sample summary
         csv_file <- NULL
         if (!is.null(values$sample_info)) {
           csv_file <- file.path(temp_dir, "sample_summary.csv")
           write.csv(values$sample_info, csv_file, row.names = FALSE)
         }
-        
-        # Get list of files that actually exist
+
+        # Provenance sidecar: ensure it exists, then copy into temp_dir
+        if (is.null(tracker$analysis_end)) {
+          tryCatch(tracker$analysis_completed(),
+                   error = function(e) message("[provenance] ", e$message))
+        }
+        for (prov_f in c("provenance.json", "replay.R")) {
+          src <- file.path(prov_dir, prov_f)
+          if (file.exists(src)) {
+            file.copy(src, file.path(temp_dir, prov_f), overwrite = TRUE)
+          }
+        }
+
+        # Get list of files that actually exist (include provenance sidecar)
         files_to_zip <- c(rds_file)
         if (!is.null(values$umap_plot) && file.exists(file.path(temp_dir, "umap_plot.png"))) {
           files_to_zip <- c(files_to_zip, file.path(temp_dir, "umap_plot.png"))
@@ -429,22 +450,20 @@ server <- function(input, output, session) {
         if (!is.null(csv_file) && file.exists(csv_file)) {
           files_to_zip <- c(files_to_zip, csv_file)
         }
-        
-        # Create zip using base R utils::zip
-        old_wd <- getwd()
-        setwd(temp_dir)
-        
-        # Get relative file paths
-        rel_files <- basename(files_to_zip)
-        
-        # Create the zip file
-        utils::zip(zipfile = file, files = rel_files)
-        
-        setwd(old_wd)
-        
+        for (prov_f in c("provenance.json", "replay.R")) {
+          if (file.exists(file.path(temp_dir, prov_f))) {
+            files_to_zip <- c(files_to_zip, file.path(temp_dir, prov_f))
+          }
+        }
+
+        # Create the zip file using zip::zip with temp_dir as root
+        zip::zip(
+          zipfile = file,
+          files   = basename(files_to_zip),
+          root    = temp_dir
+        )
+
       }, error = function(e) {
-        # Restore working directory on error
-        if (exists("old_wd")) setwd(old_wd)
         stop(paste("Download failed:", e$message))
       }, finally = {
         # Clean up temporary directory

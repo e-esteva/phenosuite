@@ -15,15 +15,15 @@ server <- function(input, output,session) {
    
   # return spatial coords file:
   mydata0 <- reactive({
-    
+
     inFile <- input$file1
-    
+
     if (is.null(inFile))
       return(NULL)
-    
-    
+
+    tracker$register_input(inFile, input_id = "file1")
     tbl = read.csv(inFile$datapath)
-    
+
     return(tbl)
   })
   
@@ -75,6 +75,8 @@ server <- function(input, output,session) {
     run=input$Run
     print(run)
     if(run > 0){
+      tracker$capture_parameters(input)
+      tracker$analysis_started()
       #text input:
       label=input$run_label
       # instrument resolution:
@@ -136,10 +138,11 @@ server <- function(input, output,session) {
         
         renderCircos(metadata,label = label,p1=p1,p2=p2,out_dir=out_dir)
         incProgress(1 / 3, detail = "Done")
-        
+
       })
+      tracker$analysis_completed()
     }
-    
+
   })
   
   output$spatial_dynamics_download <- downloadHandler(

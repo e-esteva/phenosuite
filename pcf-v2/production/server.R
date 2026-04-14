@@ -19,15 +19,13 @@ server <- function(input, output, session) {
   mydata <- reactive({
     inFile <- input$vectras
     print(inFile)
-    
-    
-    
+
     if (is.null(inFile)) {
       return(NULL)
     }
-    
-    
-    
+
+    tracker$register_input(inFile, input_id = "vectras")
+
     # to account for multiple files:
     if (length(inFile) > 0) {
       
@@ -77,12 +75,14 @@ server <- function(input, output, session) {
     run <- input$Run
     print(run)
     if (run >0 ) {
+      tracker$capture_parameters(input)
+      tracker$analysis_started()
       # text input:
       label <- input$run_label
       # instrument resolution:
       resolution <- input$instr_res
-      
-      
+
+
       library(reticulate)
       use_virtualenv('r-reticulate')
       message(py_config())
@@ -226,8 +226,9 @@ server <- function(input, output, session) {
           
           incProgress(1 / 5, detail = "Done")
         }
-        
+
       })
+      tracker$analysis_completed()
     }
   })
   output$pcf_download <- downloadHandler(

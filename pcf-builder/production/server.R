@@ -13,18 +13,17 @@ server=shinyServer( function(input, output, session) {
   
   # returns global cell type set:
   mydata <- reactive({
-    
+
     inFile=input$PCFs
-    
+
     if (is.null(inFile))
       return(NULL)
-    
-    
-    
-    
+
+    tracker$register_input(inFile, input_id = "PCFs")
+
     # to account for multiple files:
     if (length(inFile) > 0) {
-      
+
       print(inFile)
       
       # to account for multiple files:
@@ -198,8 +197,10 @@ server=shinyServer( function(input, output, session) {
     print(celltype)
     
     if(!is.null(data) & input$confirm_pcf > 0){
+      tracker$capture_parameters(input)
+      tracker$analysis_started()
       global_pcf=data
-      
+
       for(i in seq(length(groups))){
         group.tmp=groups[i]
         global_pcf$Sample=gsub(samples[i],group.tmp,as.character(global_pcf$Sample))
@@ -207,10 +208,11 @@ server=shinyServer( function(input, output, session) {
       print(table(global_pcf$Sample))
       p=ggviolin(global_pcf,x='Sample',y=celltype,color = 'Sample',add = 'boxplot')+geom_hline(yintercept = mean(global_pcf[,match(celltype,names(global_pcf))][global_pcf$Sample==ref]))+theme(legend.position = "none")+xlab('')+ylab('norm PCF')+ggtitle(glue('{celltype} Interactions | all versus {ref}'))+stat_compare_means(ref.group = ref)+coord_flip()+stat_summary(fun = "mean",geom = "point",color = "red")
       print(p)
-      
+
       if(input$confirm_pcf > 0){
         ggsave(glue('{tempdir0}/${input$run_label}.pdf'),p)
       }
+      tracker$analysis_completed()
     }
     
     

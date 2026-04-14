@@ -9,6 +9,7 @@ require(ComplexHeatmap)
 require(dplyr)
 require(reshape2)
 require('shinycssloaders')
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 ## Define server logic required to parse args and launch program:
 
@@ -78,6 +79,7 @@ server <- function(input, output,session) {
     if(is.null(inFile)){
       return(NULL)
     }else{
+      tracker$register_input(inFile, input_id = "log_odds")
       tbls <- lapply(seq(length(inFile$datapath)),function(x){
         tmp=read.csv(glue("{inFile$datapath[x]}"),row.names = 1)
         colnames(tmp)=row.names(tmp)
@@ -126,7 +128,8 @@ server <- function(input, output,session) {
   print(as.character(tempdir))
   tempdir0 = as.character(tempdir)
   print(tempdir0)
-  
+  tracker <- ProvenanceTracker$new("circos_builder", session, tempdir0)
+
   output$circos <- renderPlot({
     
     log_odds_ = mydata1()
@@ -205,7 +208,10 @@ server <- function(input, output,session) {
       }
       
       if(input$Run > 0){
-        
+
+        tracker$capture_parameters(input)
+        tracker$analysis_started()
+
         celltypes=input$celltype_selection
         message(paste0(celltypes,collapse=","))
         
@@ -310,14 +316,15 @@ server <- function(input, output,session) {
 	    # to adjust discontinuous values automatically to median instead of 0 for median:
 	    renderCircos(log_odds[[i]],label = label.tmp,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,discontinuity=ifelse(discontinuity.check > 0,T,F),col.fun=col_fun.h,label_size.cex=input$label_size)
           }
-          
-          
+
+
         }
+        tracker$analysis_completed()
       }
-      
-      
-      
-      
+
+
+
+
     }
     
     

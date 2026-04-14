@@ -73,7 +73,9 @@ server <- function(input, output, session) {
   # Load and process uploaded files
   observeEvent(input$files, {
     req(input$files)
-    
+
+    tracker$register_input(input$files, input_id = "files")
+
     # Read all .rds files
     data_list <- list()
     file_paths <- input$files$datapath
@@ -507,7 +509,10 @@ server <- function(input, output, session) {
   # Generate plots
   observeEvent(input$generate_plots, {
     req(values$data_list, input$selected_columns)
-    
+
+    tracker$capture_parameters(input)
+    tracker$analysis_started()
+
     # Get labels
     labels <- character(length(values$data_list))
     for(i in seq_along(values$data_list)) {
@@ -524,9 +529,9 @@ server <- function(input, output, session) {
       return()
     }
     
-    # Create temporary directory for plots
-    temp_dir <- tempdir()
-    plot_dir <- file.path(temp_dir, "plots")
+    # Create directory for plots inside the provenance dir so the sidecar
+    # captures them and the download ZIP ships everything together.
+    plot_dir <- file.path(prov_dir, "plots")
     if(dir.exists(plot_dir)) unlink(plot_dir, recursive = TRUE)
     dir.create(plot_dir, recursive = TRUE)
     
@@ -618,28 +623,31 @@ server <- function(input, output, session) {
     
     values$plot_files <- plot_files
     values$plots_generated <- length(plot_files) > 0
-    
+
+    tracker$analysis_completed()
+
     if(values$plots_generated) {
-      showNotification(paste("Generated", length(plot_files), "plots successfully!"), 
+      showNotification(paste("Generated", length(plot_files), "plots successfully!"),
                        type = "default")
     } else {
-      showNotification("No plots could be generated. Please check your data and column selections.", 
+      showNotification("No plots could be generated. Please check your data and column selections.",
                        type = "warning")
     }
   })
-  
-  # Download handler
+
+  # Download handler — bundles plots + provenance sidecar + replay.R
   output$download_plots <- downloadHandler(
     filename = function() {
       paste0("spatial_analysis_plots_", Sys.Date(), ".zip")
     },
     content = function(file) {
       req(values$plot_files)
-      
-      # Create zip file
-      zip::zipr(zipfile = file, 
-                files = values$plot_files,
-                recurse = FALSE)
+
+      zip::zip(
+        zipfile = file,
+        files   = dir(prov_dir, recursive = TRUE),
+        root    = prov_dir
+      )
     },
     contentType = "application/zip"
   )

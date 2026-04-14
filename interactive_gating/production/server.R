@@ -138,7 +138,9 @@ shinyServer(function(input, output, session) {
   # Load data automatically when file is selected
   observeEvent(input$csv_file, {
     req(input$csv_file)
-    
+
+    tracker$register_input(input$csv_file, input_id = "csv_file")
+
     tryCatch({
       # Use fread which handles .csv.gz automatically
       data <- data.table::fread(input$csv_file$datapath, stringsAsFactors = FALSE)
@@ -370,7 +372,12 @@ shinyServer(function(input, output, session) {
   	req(rv$current_data, input$x_axis, input$y_axis, rv$saved_brush)
   	req(input$gate_name != "")
   	req(transformed_current_data())
-  
+
+  	if (is.null(tracker$analysis_start)) {
+  		tracker$capture_parameters(input)
+  		tracker$analysis_started()
+  	}
+
   	brush <- rv$saved_brush
   
   	# Get TRANSFORMED coordinates
@@ -1182,9 +1189,20 @@ shinyServer(function(input, output, session) {
   		g
       })
       metadata <- jsonlite::toJSON(clean_tree, pretty = TRUE, auto_unbox = TRUE)
-      writeLines(metadata, file.path(package_dir, "gate_metadata.json"))   
-      
-      zip::zip(file, 
+      writeLines(metadata, file.path(package_dir, "gate_metadata.json"))
+
+      # Provenance sidecar: capture params if not yet captured, record the
+      # final gate tree as custom metadata, finalise the run, and copy
+      # provenance.json + replay.R into the package bundle.
+      tracker$capture_parameters(input)
+      tracker$custom_metadata[["gate_tree"]] <- clean_tree
+      if (is.null(tracker$analysis_start)) tracker$analysis_started()
+      # Point the tracker at package_dir so outputs are hashed against the
+      # files that actually ship in the ZIP, then finalise.
+      tracker$output_dir <- package_dir
+      tracker$analysis_completed()
+
+      zip::zip(file,
                files = list.files(package_dir, recursive = TRUE, full.names = TRUE),
                mode = "cherry-pick")
     }
