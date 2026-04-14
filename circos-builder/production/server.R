@@ -9,6 +9,7 @@ require(ComplexHeatmap)
 require(dplyr)
 require(reshape2)
 require('shinycssloaders')
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 ## Define server logic required to parse args and launch program:
 
@@ -114,8 +115,9 @@ server <- function(input, output,session) {
   dir.create(tempdir)
   print(as.character(tempdir))
   tempdir0 = as.character(tempdir)
+  tracker <- ProvenanceTracker$new("circos_builder", session, tempdir0)
   print(tempdir0)
-  
+
   output$circos <- renderPlot({
     
     log_odds_ = mydata1()

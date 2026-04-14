@@ -1,5 +1,6 @@
 require(dplyr)
 require(ggrepel)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 
 server <- function(input, output,session) {
@@ -86,8 +87,9 @@ server <- function(input, output,session) {
   dir.create(tempdir)
   print(as.character(tempdir))
   tempdir0 = as.character(tempdir)
+  tracker <- ProvenanceTracker$new("sub_clustering", session, tempdir0)
   print(tempdir0)
-  
+
   sub_clustered_obj=reactive({
     source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
     

@@ -28,6 +28,7 @@ suppressPackageStartupMessages({
   library(igraph)
   library(scales)
 })
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 options(shiny.maxRequestSize = 1000 * 1024^2)
 
@@ -528,6 +529,9 @@ ui <- fluidPage(
 # ═══════════════════════════════════════════════════════════════════════════
 
 server <- function(input, output, session) {
+  prov_dir <- file.path(tempdir(), paste0("multimodal_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("multimodal_integration", session, prov_dir)
 
   rv <- reactiveValues(
     codex_spe       = NULL,

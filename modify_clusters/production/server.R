@@ -13,6 +13,7 @@ require(tidyverse)
 source('/srv/shiny-server/Phenoptics-Menu/utils//RunPhenomenalist-shiny/RunPhenomenalist-shiny.R')
 source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
 source('/srv/shiny-server/Phenoptics-Menu/utils/heatmap-by-cluster.R')
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 server=shinyServer( function(input, output, session) {
   
@@ -212,7 +213,8 @@ server=shinyServer( function(input, output, session) {
   dir.create(tempdir)
   print(as.character(tempdir))
   tempdir0 = as.character(tempdir)
-  print(tempdir0) 
+  tracker <- ProvenanceTracker$new("modify_clusters", session, tempdir0)
+  print(tempdir0)
 
   output$plots_new <- renderPlot({
     spe = mydata0()

@@ -7,6 +7,7 @@ require(ggplot2)
 require(shinyFiles)
 require(phenomenalist)
 require(ggpubr)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 server=shinyServer( function(input, output, session) {
   
@@ -180,8 +181,9 @@ server=shinyServer( function(input, output, session) {
   dir.create(tempdir)
   print(as.character(tempdir))
   tempdir0 = as.character(tempdir)
+  tracker <- ProvenanceTracker$new("pcf_builder", session, tempdir0)
   print(tempdir0)
-  
+
   output$plot=renderPlot({
     
     samples=mydata1()

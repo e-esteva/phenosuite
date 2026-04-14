@@ -9,6 +9,7 @@ require(ComplexHeatmap)
 require(dplyr)
 require(reshape2)
 require(shinycssloaders)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 server <- function(input, output,session) {
    
@@ -63,10 +64,11 @@ server <- function(input, output,session) {
   dir.create(tempdir)
   print(as.character(tempdir))
   tempdir0 = as.character(tempdir)
+  tracker <- ProvenanceTracker$new("spatial_interactions", session, tempdir0)
   print(tempdir0)
-  
-  
-  
+
+
+
   output$plots <- renderPlot({
     spatial_obj=mydata0()
     # action button:

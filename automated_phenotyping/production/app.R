@@ -8,6 +8,7 @@ require(cowplot)
 require(dplyr)
 require(lubridate)
 require(jsonlite)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 options(shiny.maxRequestSize = 1000 * 1024^2)
 jsResetCode <- "shinyjs.resetClick = function() { history.go(0) }"
@@ -340,6 +341,7 @@ server <- shinyServer(function(input, output, session) {
     dir.create(d, showWarnings = FALSE, recursive = TRUE)
     as.character(d)
   })
+  tracker <- ProvenanceTracker$new("automated_phenotyping", session, tempdir0)
 
   # ── Load SPE ──────────────────────────────────────────────────────────
   mydata0 <- reactive({

@@ -10,6 +10,8 @@ require(promises)
 library(stringr)  # for str_detect()
 library(tools)    # for file_path_sans_ext()
 
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
+
 # Enable parallel processing
 plan(multisession)
 
@@ -252,6 +254,7 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   # Static (non-reactive) copy of the temp dir
   temp_dir_static <- NULL
+  tracker <- NULL  # Initialized after temp dir is created
   
   # Reactive values to store sample data and configurations
   values <- reactiveValues(
@@ -375,7 +378,12 @@ server <- function(input, output, session) {
   # Process uploaded files
   observeEvent(input$files, {
     cat("File upload event triggered\n")
-    
+
+    # Register inputs for provenance tracking
+    if (!is.null(tracker)) {
+      tracker$register_input(input$files, input_id = "files")
+    }
+
     # Clear previous data
     values$sample_data <- list()
     values$sample_configs <- list()
@@ -385,13 +393,13 @@ server <- function(input, output, session) {
     values$all_markers_union <- character(0)
     values$all_nuclear_markers_union <- character(0)
     values$all_classifier_labels_union <- character(0)
-    
+
     # Validate that files exist
     if(is.null(input$files) || nrow(input$files) == 0) {
       cat("No files to process\n")
       return()
     }
-    
+
     cat("Processing", nrow(input$files), "files\n")
     
     # Collect all markers across samples for global configuration
@@ -998,6 +1006,8 @@ server <- function(input, output, session) {
       values$temp_dir <- temp_path
       temp_dir_static <<- temp_path
       dir.create(values$temp_dir, recursive = TRUE)
+      tracker <<- ProvenanceTracker$new("analysis_engine_multi_config", session, temp_path)
+      tracker$record_known_seeds()
     }, error = function(e) {
       showNotification(paste("Error creating temporary directory:", e$message), type = "error")
     })
@@ -1218,7 +1228,16 @@ server <- function(input, output, session) {
     # Clear previous results
     values$processing_results <- list()
     values$processing_status <- "Processing..."
-    
+
+    # Capture provenance at analysis trigger
+    if (!is.null(tracker)) {
+      tracker$capture_parameters(input)
+      tracker$custom_metadata$sample_configs <- lapply(
+        reactiveValuesToList(values)$sample_configs, as.list
+      )
+      tracker$analysis_started()
+    }
+
     sample_names <- names(values$sample_data)
     
     results <- list()
@@ -1253,6 +1272,11 @@ server <- function(input, output, session) {
     
     values$processing_results <- results
     values$processing_status <- "Completed"
+
+    if (!is.null(tracker)) {
+      tracker$analysis_completed()
+    }
+
     showNotification("All samples processed!", type = "message")
   })
   

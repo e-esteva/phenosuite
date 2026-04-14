@@ -27,5 +27,9 @@ chown -R shiny:shiny /var/log/shiny-server 2>/dev/null || true
 mkdir -p /tmp/shiny-server
 chown -R shiny:shiny /tmp/shiny-server
 
+# Create /apps/home/rtmp used by several apps for per-session temp dirs
+mkdir -p /apps/home/rtmp
+chown -R shiny:shiny /apps/home/rtmp
+
 echo "[phenosuite] Starting Shiny Server on port 3838..."
 exec shiny-server

@@ -13,6 +13,7 @@ library(harmony)
 library(uwot)
 library(ggplot2)
 library(glue)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 options(shiny.maxRequestSize=4000*1024^2)
 
@@ -131,6 +132,10 @@ ui <- dashboardPage(
 
 # Define Server
 server <- function(input, output, session) {
+  prov_dir <- file.path(tempdir(), paste0("merging_integration_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("merging_integration", session, prov_dir)
+
   # Check if source files exist before sourcing
       source_files <- c(
                         '/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R'

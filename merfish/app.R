@@ -27,6 +27,7 @@ suppressPackageStartupMessages({
   library(SpatialExperiment)
   library(SingleCellExperiment)
 })
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 # ---------------------------------------------------------------------------
 # PHENOMENALIST THEME SYSTEM
@@ -893,6 +894,9 @@ ui <- fluidPage(
 # SERVER
 # ---------------------------------------------------------------------------
 server <- function(input, output, session) {
+  prov_dir <- file.path(tempdir(), paste0("merfish_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("merfish", session, prov_dir)
 
   # ---- Reactive values store ----
   rv <- reactiveValues(

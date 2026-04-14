@@ -113,6 +113,12 @@ COPY shiny-server.conf /etc/shiny-server/shiny-server.conf
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
+# ── Layer 7: Provenance metadata ─────────────────────────
+ARG GIT_SHA=unknown
+ARG IMAGE_DIGEST=unknown
+ENV PHENOSUITE_GIT_SHA=${GIT_SHA}
+ENV PHENOSUITE_IMAGE_DIGEST=${IMAGE_DIGEST}
+
 EXPOSE 3838
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

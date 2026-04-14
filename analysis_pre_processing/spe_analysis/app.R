@@ -11,6 +11,7 @@ library(broom)
 library(SpatialExperiment)
 library(SingleCellExperiment)
 library(scales)  # For percentage formatting
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 # Define UI
 ui <- fluidPage(
@@ -55,7 +56,10 @@ ui <- fluidPage(
 
 # Define server logic
 server <- function(input, output, session) {
-  
+  prov_dir <- file.path(tempdir(), paste0("spe_analysis_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("spe_analysis", session, prov_dir)
+
   # Reactive values to store data
   values <- reactiveValues(
     data_list = NULL,

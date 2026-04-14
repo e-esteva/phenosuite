@@ -35,6 +35,7 @@ if (!requireNamespace("sp", quietly = TRUE)) {
 } else {
   library(sp)
 }
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
 
@@ -72,6 +73,10 @@ shinyServer(function(input, output, session) {
     x_range = NULL,
     y_range = NULL
   )
+  prov_dir <- file.path(tempdir(), paste0("interactive_gating_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("interactive_gating", session, prov_dir)
+
   # Debug output to check temp directory settings
   output$debug <- renderText({
    paste(

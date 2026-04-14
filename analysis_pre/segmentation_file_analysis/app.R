@@ -6,6 +6,7 @@ library(readr)
 library(zip)
 library(gridExtra)
 library(broom)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 options(shiny.maxRequestSize = 1*1024^3)
 # Define UI
@@ -48,7 +49,10 @@ ui <- fluidPage(
 
 # Define server logic
 server <- function(input, output, session) {
-  
+  prov_dir <- file.path(tempdir(), paste0("seg_analysis_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("segmentation_file_analysis", session, prov_dir)
+
   # Reactive values to store data
   values <- reactiveValues(
     data_list = NULL,

@@ -8,6 +8,7 @@ library(reshape2)
 library(dplyr)
 library(shinycssloaders)
 require(tidyverse)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 # ── One-time Python environment setup (runs at app start, not per-click) ─────
 use_virtualenv("r-reticulate", required = FALSE)
@@ -50,6 +51,7 @@ server <- function(input, output, session) {
   # ── Session temp directory ─────────────────────────────────────────
   tempdir0 <- file.path("/apps/home/rtmp", session$token)
   dir.create(tempdir0, showWarnings = FALSE, recursive = TRUE)
+  tracker <- ProvenanceTracker$new("masquerade", session, tempdir0)
 
   # Clean up on session end
   session$onSessionEnded(function() {

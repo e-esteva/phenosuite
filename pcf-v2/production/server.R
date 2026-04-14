@@ -11,6 +11,7 @@ require(ggsignif)
 require('shinycssloaders')
 require(dplyr)
 require(MatrixGenerics)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 server <- function(input, output, session) {
 
@@ -67,9 +68,10 @@ server <- function(input, output, session) {
   dir.create(tempdir)
   print(as.character(tempdir))
   tempdir0 = as.character(tempdir)
-  print(tempdir0) 
-  
-  
+  tracker <- ProvenanceTracker$new("pcf_v2", session, tempdir0)
+  print(tempdir0)
+
+
   output$plots <- renderPlot({
     # action button:
     run <- input$Run

@@ -9,6 +9,8 @@ require(shinycssloaders)
 require(dplyr)
 require(ggrepel)
 
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
+
 options(shiny.maxRequestSize=1000*1024^2) 
 jsResetCode <- "shinyjs.resetClick = function() {history.go(0)}" # Define the js method that resets the page
 
@@ -102,16 +104,19 @@ server <- function(input, output, session) {
   # ===== SUB-CLUSTERING FUNCTIONS =====
   tempdir0=glue('/apps/home/rtmp/{session$token}')
   dir.create(tempdir0)
+  sub_tracker <- ProvenanceTracker$new("modify_spe_sub_clustering", session, tempdir0)
+  sub_tracker$record_known_seeds()
 
   message(glue('tempdir0: {tempdir0}'))
 
   # return spe object for sub-clustering:
   mydata0 <- reactive({
     inFile <- input$file1
-    
+
     if (is.null(inFile)){
       return(NULL)
     }else{
+      sub_tracker$register_input(inFile, input_id = "file1")
       spe = readRDS(inFile$datapath)
       return(spe)
     }
@@ -184,6 +189,8 @@ server <- function(input, output, session) {
     }
     
     if(input$run > 0){
+      sub_tracker$capture_parameters(input)
+      sub_tracker$analysis_started()
       withProgress(message = glue("Sub-Clustering {group}"), value = 0, {
         # Function to create safe cluster identifiers
 	create_cluster_identifier <- function(cluster_names) {
@@ -329,16 +336,18 @@ server <- function(input, output, session) {
       })
       
       saveRDS(spe,glue('{tempdir0}/spe.rds'))
-      
+
       dir.create(glue('{tempdir0}/mask-inputs/'))
       sub_clusters=str_subset(names(colData(spe)),pattern = 'subclustered')
       spatial_df=data.frame(spatialCoords(spe))
-      
+
       for(i in sub_clusters){
         spatial_df$cluster=spe[[i]]
         write.csv(spatial_df,glue('{tempdir0}/mask-inputs/{i}-spatial_anno.csv'))
       }
-      
+
+      sub_tracker$analysis_completed()
+
       return(list(spe,last_new_col_name,last_new_col_name_bin))
     }else{
       return(NULL)
@@ -415,10 +424,11 @@ server <- function(input, output, session) {
   # return spe object for re-clustering:
   recluster_data <- reactive({
     inFile <- input$file2
-    
+
     if (is.null(inFile)){
       return(NULL)
     }else{
+      recluster_tracker$register_input(inFile, input_id = "file2")
       spe = readRDS(inFile$datapath)
       return(spe)
     }
@@ -456,6 +466,8 @@ server <- function(input, output, session) {
   recluster_tempdir = file.path(tempdir(), paste0("recluster_", session$token, "_", as.integer(Sys.time())))
   dir.create(recluster_tempdir, showWarnings = FALSE)
   recluster_tempdir0 = as.character(recluster_tempdir)
+  recluster_tracker <- ProvenanceTracker$new("modify_spe_re_clustering", session, recluster_tempdir0)
+  recluster_tracker$record_known_seeds()
   
   reclustered_obj <- reactive({
     source('/srv/shiny-server/phenomenalist/utils/RunPhenomenalist-shiny/phenomenalist-utils-shiny.R')
@@ -463,7 +475,9 @@ server <- function(input, output, session) {
     spe = recluster_data()
     
     if(!is.null(spe) && input$run_recluster > 0){
-      
+      recluster_tracker$capture_parameters(input)
+      recluster_tracker$analysis_started()
+
       # Store existing clustering columns before processing
       existing_cluster_cols = str_subset(names(colData(spe)), 'cluster')
       print('Existing clustering columns:')
@@ -519,7 +533,9 @@ server <- function(input, output, session) {
       
       # Return the spe object and the lowest NEW clustering column
       lowest_new_col = if(length(new_cluster_cols) > 0) new_cluster_cols[1] else NULL
-      
+
+      recluster_tracker$analysis_completed()
+
       return(list(spe, lowest_new_col, new_cluster_cols))
     }else{
       return(NULL)

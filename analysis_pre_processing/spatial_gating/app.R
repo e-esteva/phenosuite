@@ -4,6 +4,8 @@ library(readr)
 library(ggplot2)
 library(scattermore)
 
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
+
 options(shiny.maxRequestSize = 2 * 1024^3)
 
 MAX_RENDER <- 200000
@@ -221,6 +223,11 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
 
+  # Provenance setup
+  prov_dir <- file.path(tempdir(), paste0("spatial_gating_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("spatial_gating", session, prov_dir)
+
   rv <- reactiveValues(
     raw          = NULL,
     processed    = NULL,
@@ -237,6 +244,7 @@ server <- function(input, output, session) {
   # ---- File upload --------------------------------------------------------
   observeEvent(input$file, {
     req(input$file)
+    tracker$register_input(input$file, input_id = "file")
     tryCatch({
       delim  <- detect_delim(input$file$name)
       df     <- read_delim(input$file$datapath, delim=delim,
@@ -545,8 +553,35 @@ server <- function(input, output, session) {
   }
 
   output$downloadSelected <- downloadHandler(
-    filename = function() paste0("gated_cells_", Sys.Date(), out_ext()),
-    content  = function(file) { req(rv$selected); write_out(strip_xy(rv$selected), file) }
+    filename = function() paste0("gated_cells_", Sys.Date(), ".zip"),
+    content  = function(file) {
+      req(rv$selected)
+
+      # Write gated data to provenance dir
+      data_name <- paste0("gated_cells_", Sys.Date(), out_ext())
+      data_path <- file.path(prov_dir, data_name)
+      write_out(strip_xy(rv$selected), data_path)
+
+      # Capture gate geometry as custom metadata
+      tracker$custom_metadata$gates <- lapply(seq_along(rv$gates), function(i) {
+        list(gate_id = i, x = rv$gates[[i]]$x, y = rv$gates[[i]]$y)
+      })
+      tracker$custom_metadata$n_cells_total <- nrow(rv$processed)
+      tracker$custom_metadata$n_cells_gated <- nrow(rv$selected)
+
+      # Write provenance
+      tracker$capture_parameters(input)
+      tracker$analysis_started()
+      tracker$analysis_completed()
+
+      # Bundle into ZIP
+      zip::zip(
+        zipfile = file,
+        files   = dir(prov_dir),
+        root    = prov_dir
+      )
+    },
+    contentType = "application/zip"
   )
   output$downloadAll <- downloadHandler(
     filename = function() paste0("all_cells_", Sys.Date(), out_ext()),

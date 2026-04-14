@@ -2,6 +2,7 @@ library(shiny)
 library(DT)
 library(plotly)
 library(readr)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 options(shiny.maxRequestSize = 1*1024^3)
 # Define UI
@@ -54,7 +55,10 @@ ui <- fluidPage(
 
 # Define server logic
 server <- function(input, output, session) {
-  
+  prov_dir <- file.path(tempdir(), paste0("spatial_gating_legacy_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("spatial_gating_legacy", session, prov_dir)
+
   # Reactive value to store the uploaded data
   data <- reactiveVal(NULL)
   processed_data <- reactiveVal(NULL)

@@ -4,6 +4,7 @@ library(SingleCellExperiment)
 library(ggplot2)
 library(colourpicker)
 library(plotly)
+source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
 options(shiny.maxRequestSize = 4*500 * 1024^2)
 
@@ -103,7 +104,10 @@ ui <- fluidPage(
 # Server
 # ─────────────────────────────────────────────────────────────────────────────
 server <- function(input, output, session) {
-  
+  prov_dir <- file.path(tempdir(), paste0("spatialExploreR_", session$token))
+  dir.create(prov_dir, showWarnings = FALSE)
+  tracker <- ProvenanceTracker$new("spatialExploreR", session, prov_dir)
+
   # Reactive: loaded SPE object (mutable copy) --------------------------------
   spe <- reactiveVal(NULL)
   mutated <- reactiveVal(FALSE)      # has the user created any new columns?
