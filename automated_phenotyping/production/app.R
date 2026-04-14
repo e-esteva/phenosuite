@@ -439,10 +439,7 @@ server <- shinyServer(function(input, output, session) {
       selectInput("prompt_alg", "Prompt algorithm:",
         c("Symmetric single choice" = "v1",
           "Asymmetric 2-choice"     = "v2")),
-      conditionalPanel(
-        condition = "input.prompt_alg == 'v2'",
-        textInput("tissue", "Tissue type:", placeholder = "e.g. spleen")
-      )
+      textInput("tissue", "Tissue type:", placeholder = "e.g. spleen")
     )
   })
 
@@ -606,14 +603,20 @@ server <- shinyServer(function(input, output, session) {
         map_vals <- mapply(function(m, v)
           paste0(m, ifelse(v > 0, "+", "-")), markers, cluster_i.avgExp)
 
+        tissue_clause <- if (!is.null(tissue_val) && nzchar(trimws(tissue_val))) {
+          glue(" This is a {tissue_val}.")
+        } else {
+          ""
+        }
+
         if (prompt_alg == "v1") {
           map_raw  <- sapply(seq_along(cluster_i.avgExp), function(x)
             paste0(c(names(cluster_i.avgExp)[x], cluster_i.avgExp[[x]]), collapse = ":"))
           prompt   <- glue("what celltype is described by {paste0(c(map_raw[cluster_i.avgExp > quantile(cluster_i.avgExp, .95)], map_raw[cluster_i.avgExp < quantile(cluster_i.avgExp, .05)]), collapse = ',')}?")
-          content_ <- glue("{prompt} Give me a 3 word response")
+          content_ <- glue("{prompt}{tissue_clause} Give me a 3 word response")
         } else {
           prompt   <- glue("what celltype is described by {paste0(c(map_vals[cluster_i.avgExp > quantile(cluster_i.avgExp, .9)], map_vals[cluster_i.avgExp < quantile(cluster_i.avgExp, .05)]), collapse = ',')}?")
-          content_ <- glue("{prompt} This is a {tissue_val}. Give me a 3 word response. Give two choices. Explain. Format response like: Choice X: choice; Explanation X: explanation.")
+          content_ <- glue("{prompt}{tissue_clause} Give me a 3 word response. Give two choices. Explain. Format response like: Choice X: choice; Explanation X: explanation.")
         }
 
         response <- gpt_call(

@@ -94,6 +94,55 @@ Publication-ready visualization.
 
 ---
 
+## Automated Phenotyping — Prompt Algorithms
+
+The **Automated Phenotyping** app uses a large language model (GPT) to assign cell-type labels to each cluster in a `SpatialExperiment`. For every cluster, the app computes per-marker mean expression across its member cells, picks the most informative markers, and asks the LLM to name the cell type. The exact way markers are selected and the prompt is phrased is controlled by the **Prompt algorithm** dropdown. Two algorithms are currently available, and both can be optionally grounded in a tissue context via the **Tissue type** text box (e.g. `spleen`, `tonsil`, `lung`). The text box is always shown — if left blank, no tissue clause is added to the prompt.
+
+### v1 — Symmetric single choice
+
+**Marker selection.** For each cluster, the app takes markers with mean expression above the 95th percentile *and* below the 5th percentile of that cluster's marker distribution. The thresholds are symmetric around the median (top 5% and bottom 5%), hence *symmetric*.
+
+**Encoding.** Markers are passed to the model as raw `marker:value` pairs — the underlying numeric expression is preserved, so the model sees quantitative evidence rather than a discretised `+/-` call.
+
+**Prompt shape.** The model is asked a single question and instructed to return a three-word label. No alternatives, no explanation:
+
+> *"what celltype is described by {markers}? [This is a {tissue}.] Give me a 3 word response"*
+
+**Output.** Exactly one cell-type label per cluster. Fast, low-token, easy to parse. Good when markers are unambiguous and you trust the model's first call.
+
+### v2 — Asymmetric 2-choice
+
+**Marker selection.** Markers above the 90th percentile (top 10%, a wider "high" set) and below the 5th percentile (bottom 5%) — asymmetric thresholds that surface more positive evidence than negative.
+
+**Encoding.** Markers are passed as `marker+` / `marker-` tokens (thresholded at zero), mimicking the `CD4+CD8-` shorthand immunologists use. The model sees a discretised signature rather than raw values.
+
+**Prompt shape.** The model is asked to propose **two candidate cell types** and justify each one, forced into a structured format so the app can parse both choices:
+
+> *"what celltype is described by {markers}? [This is a {tissue}.] Give me a 3 word response. Give two choices. Explain. Format response like: Choice X: choice; Explanation X: explanation."*
+
+**Output.** Two candidate labels plus a free-text explanation for each, stored alongside the cluster. Both labels are retained in the annotation (joined with a comma), and the explanations are preserved in the downloaded report for auditing. Use this when markers are ambiguous, when you want a second opinion per cluster, or when you plan to manually pick between the two candidates afterwards.
+
+### Post-processing (both algorithms)
+
+After per-cluster calls, the app runs two additional LLM passes that are independent of the chosen prompt algorithm:
+
+1. **Harmonisation.** Near-duplicate labels (`CD4 T cell` vs `CD4T cells`, `NK cell` vs `Natural Killer cell`) are collapsed to a canonical form via a single JSON remapping call. Title Case is enforced; biologically distinct populations are kept separate.
+2. **Broad lineage.** Harmonised labels are mapped to coarse immune lineage buckets (`T Cell`, `B Cell`, `NK Cell`, `Macrophage`, `Dendritic Cell`, `Neutrophil`, `Mast Cell`, `Monocyte`) for lineage-level plots. Non-immune labels (stromal, endothelial, epithelial) are preserved as-is.
+
+Both steps are automatic and run after the per-cluster annotation finishes — the choice of `v1` vs `v2` only affects the per-cluster labeling call.
+
+### Choosing between them
+
+| | v1 (symmetric) | v2 (asymmetric 2-choice) |
+|---|---|---|
+| Markers used | top 5% / bottom 5% | top 10% / bottom 5% |
+| Marker encoding | raw `marker:value` | thresholded `marker+` / `marker-` |
+| Answers per cluster | 1 | 2 + explanations |
+| Token cost per call | lower | ~2–3× higher |
+| Best when | panels are clean, labels unambiguous | panels are large, markers overlap, or you want a second opinion |
+
+---
+
 ## Multi-Modal Integration (CODEX + MERFISH)
 
 A dedicated Shiny app integrates CODEX protein and MERFISH transcript data from the same tissue:
