@@ -198,20 +198,22 @@ server <- function(input, output,session) {
 
       label=input$run_label
       was_transformed <- FALSE
-      if(label != ""){
 
-        #if(sum(is.infinite(log_odds)) > 0){
-        #  log_odds = log(exp(log_odds)+1)
-        #  label=glue('{label}_transformed')
-        #}
-
-	if (sum(is.infinite(log_odds)) > 0) {
-  		log_odds        <- log(exp(log_odds) + 1)
-  		label           <- glue("{label}_transformed")
-  		was_transformed <- TRUE
-	}
-
+      # Stabilize -Inf / Inf unconditionally. Previously this was gated on
+      # `label != ""` — meaning a user who loaded a log-odds CSV without
+      # typing a run label got raw -Inf values passed into colorRamp2, which
+      # emits garbage hex strings ("NAFF") that crash chordDiagramFromMatrix
+      # deep in col2rgb with a misleading "undefined columns selected" error.
+      # The transform now always runs; only the filename suffix is gated on
+      # there being a user-supplied label to decorate.
+      if (sum(is.infinite(log_odds)) > 0) {
+        log_odds        <- log(exp(log_odds) + 1)
+        was_transformed <- TRUE
+        if (nzchar(label)) {
+          label <- glue("{label}_transformed")
+        }
       }
+
       renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=NULL,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed)
     }
 
@@ -228,8 +230,10 @@ server <- function(input, output,session) {
       label=input$run_label
       if(sum(is.infinite(log_odds)) > 0){
         log_odds = log(exp(log_odds)+1)
-        label=glue('{label}_transformed')
-	was_transformed <- TRUE
+        was_transformed <- TRUE
+        if (nzchar(label)) {
+          label <- glue('{label}_transformed')
+        }
       }
       renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed)
       tracker$analysis_completed()

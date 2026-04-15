@@ -16,6 +16,15 @@ renderCircos <- function(logOdds, label, p1, p2, out_dir,
   # --- detect discontinuity (infinities present) ---
   if (sum(is.infinite(logOdds)) > 0) {
     discontinuity <- TRUE
+    # Defense in depth: a caller that forgets to stabilise will otherwise
+    # hand -Inf into chordDiagramFromMatrix, where `rowSums(abs(mat))`
+    # produces Inf, `xlim/sum(xlim)` becomes NaN, `%in% NA` drops every
+    # sector, and the whole thing explodes with a cryptic
+    # "undefined columns selected" from deep inside [.data.frame.
+    # Apply log(exp(x)+1) — same transform circos-artist/builder do — so
+    # the matrix is always finite by the time circlize sees it.
+    logOdds <- log(exp(logOdds) + 1)
+    transformed <- TRUE
   }
 
   # --- helper: columns that actually carry signal ---
@@ -33,8 +42,24 @@ renderCircos <- function(logOdds, label, p1, p2, out_dir,
   #   - divergent:               blue  -> white  -> red
   #
   if (is.null(col.fun)) {
-    lo <- min(active_vals)
-    hi <- max(active_vals)
+    # Defense in depth: strip non-finite values before picking ramp endpoints.
+    # If a caller forgets to log(exp(x)+1)-stabilise a log-odds matrix, raw
+    # -Inf / Inf values would otherwise propagate into colorRamp2 and emit
+    # invalid hex strings like "NAFF", which then crash chordDiagramFromMatrix
+    # deep inside col2rgb with a misleading "undefined columns selected".
+    finite_vals <- active_vals[is.finite(active_vals)]
+    if (length(finite_vals) == 0) {
+      # Degenerate: nothing finite to interpolate across. Pick a trivial
+      # ramp and let the downstream chord diagram handle the empty plot.
+      finite_vals <- c(0, 1)
+    }
+    lo <- min(finite_vals)
+    hi <- max(finite_vals)
+    if (lo == hi) {
+      # Flat matrix — widen slightly so colorRamp2 has a non-zero interval.
+      lo <- lo - 0.5
+      hi <- hi + 0.5
+    }
 
     # Pick the centre of the colour ramp
     centre <- if (transformed || discontinuity) (lo + hi) / 2 else 0
