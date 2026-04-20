@@ -82,6 +82,63 @@ Cellular neighborhood and interaction analysis.
 |---|---|
 | **Pair Correlation Function (PCF)** | PCF analysis across cell-type pairs |
 | **Pairwise Log-Odds Interactions** | Enrichment/depletion of cell-type co-occurrence |
+| **Circuit Enrichment** | N-way spatial co-localization: detects neighborhoods where all members of a user-defined cell-type circuit co-occur within a configurable radius |
+
+---
+
+## Circuit Enrichment
+
+The **Circuit Enrichment** app (`circuit_enrichment/production`) tests whether a user-defined set of cell types (the *circuit*) is spatially enriched beyond chance — i.e., whether neighborhoods exist in the tissue where every circuit member is simultaneously present.
+
+### Inputs
+
+Accepts two file formats (up to 4 GB each):
+
+| Format | How x/y and cell type are identified |
+|---|---|
+| **SPE `.rds`** | `spatialCoords()` for coordinates; any `character`/`factor` column in `colData` is offered as a cell-type selector |
+| **CSV / CSV.gz** | Coordinates auto-detected from columns matching `x`, `y`, `Cell X Position`, `Cell Y Position`, `centroid_x/y`, etc. (user can override). All remaining columns are offered as the cell-type selector — same format as the PWLO app's segmentation CSV |
+
+### Analytical engine
+
+All computation runs in **`circuit_engine.py`** via `reticulate` (scipy / numpy). The same Python file is used by both the Shiny GUI and the CLI (`run-spatial_circuit-enrichment.py`), so results are reproducible outside Shiny.
+
+#### 1 — Neighborhood composition (`compute_neighborhood_composition`)
+For every cell, a `cKDTree` radius query counts how many of each circuit member fall within `radius` coordinate units. Returns an `(n_cells × k)` integer composition matrix.
+
+#### 2 — Circuit scoring (`circuit_score`)
+Each row of the composition matrix is converted to a per-member fraction (count / total neighbors). Two scoring methods:
+
+| Method | Formula | Interpretation |
+|---|---|---|
+| **Min fraction** (default) | `min(fracs)` per row | Bottlenecked by the rarest member — strict; all members must be simultaneously present |
+| **Geometric mean** | `exp(mean(log(fracs + ε)))` | Softer; rewards neighborhoods with balanced representation across members |
+
+#### 3 — Permutation z-test (`circuit_zscore`)
+Rows of the composition matrix are permuted `n` times (default 200), scores recomputed under the null, and the observed mean is z-scored against the null distribution. Returns `z`, `p_value`, `obs_mean`, `null_mean`, `null_sd`.
+
+#### 4 — Threshold sweep (`threshold_sweep`)
+For a user-defined range of score thresholds, computes `n_positive`, `frac_positive`, and `mean_score` — used to visualise the sensitivity/specificity trade-off before committing to a final threshold.
+
+### UI tabs
+
+| Tab | Contents |
+|---|---|
+| **Data summary** | Spatial scatter coloured by cell type; composition bar chart with circuit members highlighted |
+| **Circuit scores** | Z-score / p-value stat boxes; score histogram (non-zero cells); spatial map coloured by circuit score (viridis inferno) |
+| **Threshold optimization** | Sweep curves (n_positive and frac_positive vs threshold); interactive spatial map for the explorer threshold slider |
+| **Circuit domains** | Spatial map showing circuit-positive cells coloured by which circuit member they belong to; text summary panel |
+
+### Output ZIP
+
+| File | Contents |
+|---|---|
+| `circuit_scores.csv` | Per-cell x, y, celltype, circuit_score, positive flag |
+| `neighborhood_composition.csv` | Per-cell counts of each circuit member within radius |
+| `threshold_sweep.csv` | Sweep table (threshold, n_positive, frac_positive, mean_score) |
+| `enrichment_summary.json` | Circuit definition, parameters, z/p statistics, input format |
+| `provenance.json` | Full reproducibility sidecar (see below) |
+| `replay.R` | Auto-generated replay script with SHA-256 input verification |
 
 ### Graphics Module
 Publication-ready visualization.
@@ -200,6 +257,7 @@ The sidecar is enforced across **every app served from the landing page**. The t
 | | Masquerade (`masquerade`) | ✓ (image + spatial metadata + optional marker whitelist) | ✓ | ✓ | Sidecar bundled into the download ZIP alongside the TIFF |
 | **Spatial** | Pair Correlation Function (`pcf-v2`) | ✓ (multi-CSV) | ✓ | ✓ | |
 | | Pairwise Log-Odds Interactions (`spatial_interactions`) | ✓ | ✓ | ✓ | |
+| | Circuit Enrichment (`circuit_enrichment`) | ✓ (SPE or CSV/CSV.gz) | ✓ | ✓ | Provenance finalised in download handler so output-file hashes are captured; `input_format` field records SPE vs CSV path |
 | **Graphics** | PCF Builder (`pcf-builder`) | ✓ | ✓ | ✓ | |
 | | Circos Artist (`circos-artist`) | ✓ | ✓ | ✓ | |
 | | Circos Builder (`circos-builder/dev`) | ✓ (multi log-odds CSV) | ✓ | ✓ | Dev variant is linked from the homepage; production variant is also wired |
@@ -328,7 +386,7 @@ The container uses a single-image approach:
 1. **Input** — Segmentation CSVs, RDS files with SpatialExperiment/Seurat objects, or raw MERFISH expression matrices
 2. **Pre-processing** — QC, normalization, spatial gating
 3. **Clustering & annotation** — Manual gating, automated (GPT), or clustering-based
-4. **Spatial analysis** — PCF, log-odds interactions, circos visualization
+4. **Spatial analysis** — PCF, log-odds interactions, circuit enrichment, circos visualization
 5. **Multi-modal integration** — Optional CODEX + MERFISH joint analysis
 6. **Export** — RDS (SpatialExperiment), CSV metadata, PDF figures
 
