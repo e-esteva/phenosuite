@@ -111,7 +111,12 @@ ui <- fluidPage(
       uiOutput("circuit_tags"),
 
       hr(), h4("Neighborhood"),
-      numericInput("radius", "Radius (coord units)", 50, min = 1, step = 5),
+      numericInput("resolution", "Instrument resolution (\u00b5m / pixel)",
+        0.5, min = 0.01, step = 0.01),
+      numericInput("radius_um", "Search radius (\u00b5m)",
+        25, min = 1, step = 5),
+      tags$p(class = "format-hint",
+        "Pixel radius used = radius (\u00b5m) \u00f7 resolution (\u00b5m/pixel)"),
       selectInput("score_method", "Scoring",
         choices = c("Min fraction"    = "min_fraction",
                     "Geometric mean"  = "geometric_mean")),
@@ -321,7 +326,7 @@ server <- function(input, output, session) {
       comp <- from_py(compute_neighborhood_composition(
         to_py_array(d$xy),
         to_py_str(d$celltypes),
-        as.numeric(input$radius),
+        as.numeric(input$radius_um / input$resolution),
         as.list(input$circuit_members)))
       rv$comp <- comp
       setProgress(0.4, message = "Python: scoring...")
@@ -469,7 +474,9 @@ server <- function(input, output, session) {
     cat("Input   :", if (spe_loaded()) "SPE (.rds)" else "CSV", "\n")
     cat("Circuit :", paste(input$circuit_members, collapse = " + "), "\n")
     cat("Scoring :", input$score_method, "\n")
-    cat("Radius  :", input$radius, "\n")
+    cat("Radius  :", input$radius_um, "\u00b5m  (",
+        round(input$radius_um / input$resolution, 2), "px @ ",
+        input$resolution, "\u00b5m/px)\n")
     cat("Threshold:", input$active_thresh, "\n")
     cat("Positive:", sum(pos), "/", length(pos),
         sprintf("(%.1f%%)", 100 * mean(pos)), "\n")
@@ -503,7 +510,9 @@ server <- function(input, output, session) {
       jp <- file.path(tempdir0, "enrichment_summary.json")
       write(jsonlite::toJSON(list(
         circuit       = input$circuit_members,
-        radius        = input$radius,
+        radius_um     = input$radius_um,
+        resolution    = input$resolution,
+        radius_px     = input$radius_um / input$resolution,
         score_method  = input$score_method,
         n_perm        = input$n_perm,
         threshold     = input$active_thresh,
