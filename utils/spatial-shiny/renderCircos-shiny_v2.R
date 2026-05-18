@@ -4,14 +4,17 @@ renderCircos <- function(logOdds, label, p1, p2, out_dir,
                          discontinuity = FALSE,
                          col.fun = NULL,
                          label_size.cex = 0.9,
-                         transformed = FALSE) {
+                         transformed = FALSE,
+                         self_interactions = FALSE) {
   require(colorspace)
   require(ComplexHeatmap)
   require(glue)
   require(circlize)
 
   logOdds <- as.matrix(logOdds)
-  diag(logOdds) <- 0
+  if (!self_interactions) {
+    diag(logOdds) <- 0
+  }
 
   # --- detect discontinuity (infinities present) ---
   if (sum(is.infinite(logOdds)) > 0) {

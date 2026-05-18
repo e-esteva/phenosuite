@@ -46,6 +46,7 @@ ui <- fluidPage(
       numericInput('label_size','Label Size',0.9),
       plotOutput("circos")%>% withSpinner(color="#0dc5c1"),
       
+      uiOutput('transform_warning'),
       selectInput('action','Select Operation',choices = c('Integrate','Harmonize')),
       selectInput('view','Select View',choices = c('Global','Unimodal')),
       conditionalPanel(condition="input.view=='Unimodal'",selectInput('ref_selection','Select Reference Celltype',choices = "",selected = "")),

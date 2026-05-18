@@ -47,6 +47,7 @@ ui <- fluidPage(
       plotOutput("circos")%>% withSpinner(color="#0dc5c1"),
       
       
+      selectInput('self_interactions','Include Self-Interactions',choices = c('No','Yes'),selected = 'No'),
       selectInput('view','Select View',choices = c('Global','Unimodal')),
       #conditionalPanel(condition="input.view=='Unimodal'",checkboxGroupInput('celltype_selection','Select Celltypes to View',choices = "",inline = T,selected = "")),
       conditionalPanel(condition="input.view=='Unimodal'",selectInput('ref_selection','Select Reference Celltype',choices = "",selected = "")),

@@ -214,7 +214,7 @@ server <- function(input, output,session) {
         }
       }
 
-      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=NULL,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed)
+      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=NULL,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed,self_interactions = (input$self_interactions == 'Yes'))
     }
 
 
@@ -235,7 +235,7 @@ server <- function(input, output,session) {
           label <- glue('{label}_transformed')
         }
       }
-      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed)
+      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed,self_interactions = (input$self_interactions == 'Yes'))
       tracker$analysis_completed()
     }
 
