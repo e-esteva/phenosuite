@@ -5,7 +5,9 @@ renderCircos <- function(logOdds, label, p1, p2, out_dir,
                          col.fun = NULL,
                          label_size.cex = 0.9,
                          transformed = FALSE,
-                         self_interactions = FALSE) {
+                         self_interactions = FALSE,
+                         grid.col = NULL,
+                         legend_title = "log-odds") {
   require(colorspace)
   require(ComplexHeatmap)
   require(glue)
@@ -36,41 +38,44 @@ renderCircos <- function(logOdds, label, p1, p2, out_dir,
 
   # --- build colour function ---
   #
-  # Midpoint logic:
-  #   - transformed or discontinuity (no natural zero): use data midpoint
-  #   - normal:                                          use 0
+  # Continuous palette:  white (min) -> yellow (median) -> red (max)
+  #   Always data-driven so the gradient "heats up" from the lowest
+  #   value to the highest regardless of whether the data is 0+ or +/-.
   #
-  # Palette logic:
-  #   - continuous_color_scheme:  white -> yellow -> red
-  #   - divergent:               blue  -> white  -> red
+  # Divergent palette:   blue (min) -> white (0) -> red (max)
+  #   Centre is 0 for untransformed data (natural divergence point)
+  #   or the data midpoint for transformed / 0+ data.
   #
   if (is.null(col.fun)) {
-    # Defense in depth: strip non-finite values before picking ramp endpoints.
-    # If a caller forgets to log(exp(x)+1)-stabilise a log-odds matrix, raw
-    # -Inf / Inf values would otherwise propagate into colorRamp2 and emit
-    # invalid hex strings like "NAFF", which then crash chordDiagramFromMatrix
-    # deep inside col2rgb with a misleading "undefined columns selected".
     finite_vals <- active_vals[is.finite(active_vals)]
     if (length(finite_vals) == 0) {
-      # Degenerate: nothing finite to interpolate across. Pick a trivial
-      # ramp and let the downstream chord diagram handle the empty plot.
       finite_vals <- c(0, 1)
     }
     lo <- min(finite_vals)
     hi <- max(finite_vals)
     if (lo == hi) {
-      # Flat matrix — widen slightly so colorRamp2 has a non-zero interval.
       lo <- lo - 0.5
       hi <- hi + 0.5
     }
 
-    # Pick the centre of the colour ramp
-    centre <- if (transformed || discontinuity) (lo + hi) / 2 else 0
-
     if (continuous_color_scheme) {
+      # Continuous "heat-up": white -> yellow -> red
+      # For 0+ (transformed) data: use median of non-zero values as midpoint
+      #   so yellow is visible in the gradient (most matrix entries are 0).
+      # For +/- data: anchor yellow at 0.
+      if (transformed || discontinuity || lo >= 0) {
+        nonzero_vals <- finite_vals[finite_vals > 0]
+        centre <- if (length(nonzero_vals) > 0) median(nonzero_vals) else (lo + hi) / 2
+      } else {
+        centre <- 0
+      }
       col_fun <- colorRamp2(c(lo, centre, hi),
                             c("white", "yellow", "red"))
     } else {
+      # Divergent: blue -> white -> red
+      # Use 0 as natural centre for untransformed +/- data;
+      # use data midpoint for transformed 0+ data.
+      centre <- if (transformed || discontinuity) (lo + hi) / 2 else 0
       col_fun <- colorRamp2(c(lo, centre, hi),
                             c("blue", "white", "red"))
     }
@@ -84,13 +89,16 @@ renderCircos <- function(logOdds, label, p1, p2, out_dir,
   .draw_circos <- function(add_title = FALSE) {
     par(cex = label_size.cex, mar = c(1.25, 1.25, 1.25, 1.25))
 
+    # Use custom grid colors if provided, otherwise default integer palette
+    grid_colors <- if (!is.null(grid.col)) grid.col else seq(ncol(logOdds))
+
     chordDiagram(
       logOdds,
       annotationTrack  = "grid",
       preAllocateTracks = list(track.height = 0.1),
       scale            = TRUE,
       col              = col_fun,
-      grid.col         = seq(ncol(logOdds)),
+      grid.col         = grid_colors,
 
       # --- KEY CHANGE: show directionality via diffHeight ---
       # Source end is taller; target (incoming) end is shorter,
@@ -134,7 +142,7 @@ renderCircos <- function(logOdds, label, p1, p2, out_dir,
       at             = round(as.vector(quantile(active_vals)), 4),
       col_fun        = col_fun,
       title_position = "topleft",
-      title          = "log-odds"
+      title          = legend_title
     )
     lgd_list_vertical <- packLegend(lgd_links)
     draw(lgd_list_vertical,

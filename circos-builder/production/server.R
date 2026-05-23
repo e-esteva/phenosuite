@@ -112,6 +112,21 @@ server <- function(input, output,session) {
     
   })
   
+  default_grid_hex <- function(n) {
+    pal <- palette()
+    cols <- pal[(seq(n) - 1) %% length(pal) + 1]
+    sapply(cols, function(c) rgb(t(col2rgb(c)), maxColorValue = 255), USE.NAMES = FALSE)
+  }
+
+  output$grid_color_inputs <- renderUI({
+    celltypes <- input$celltype_selection
+    req(length(celltypes) > 0)
+    hex_defaults <- default_grid_hex(length(celltypes))
+    lapply(seq_along(celltypes), function(i) {
+      textInput(glue('grid_col_{i}'), celltypes[i], value = hex_defaults[i])
+    })
+  })
+
   transform_status <- reactive({
     log_odds_ = mydata1()
     celltypes = input$celltype_selection
@@ -119,7 +134,7 @@ server <- function(input, output,session) {
     per_matrix <- lapply(log_odds_, function(x) {
       ct = intersect(celltypes, row.names(x))
       tmp = as.matrix(x[ct, ct])
-      diag(tmp) = 0
+      if(input$self_interactions != 'Yes') diag(tmp) = 0
       list(
         has_inf      = sum(is.infinite(tmp)) > 0,
         has_negative = any(tmp[is.finite(tmp)] < 0),
@@ -239,6 +254,14 @@ server <- function(input, output,session) {
         tracker$capture_parameters(input)
         tracker$analysis_started()
 
+        custom_gc <- NULL
+        if (input$custom_grid_colors == 'Yes') {
+          custom_gc <- setNames(
+            sapply(seq_along(new_clusters_), function(i) input[[glue('grid_col_{i}')]]),
+            new_clusters_
+          )
+        }
+
         celltypes=input$celltype_selection
         message(paste0(celltypes,collapse=","))
 
@@ -288,8 +311,8 @@ server <- function(input, output,session) {
           print(log_odds)
 
           was_transformed = (discontinuity.check > 0) || harmonize_all || harmonize_neg
-          renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,discontinuity=was_transformed,label_size.cex=input$label_size,transformed=was_transformed)
-          
+          renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,discontinuity=was_transformed,label_size.cex=input$label_size,transformed=was_transformed,self_interactions=(input$self_interactions=='Yes'),grid.col=custom_gc,legend_title=input$legend_title)
+
         }
         if(input$action == 'Harmonize'){
         
@@ -326,16 +349,29 @@ server <- function(input, output,session) {
             } else if(harmonize_neg && status$has_negative[i]){
               tmp = log(exp(tmp)+1)
             }
-            diag(tmp)=0
+            if(input$self_interactions != 'Yes') diag(tmp)=0
             return(tmp)
           })
-          
+
           logOdds=do.call('rbind',log_odds)
           
+	  logOdds = as.matrix(logOdds)
+	  active_vals.h = as.numeric(logOdds[,abs(colSums(logOdds)) > 0])
+	  finite_vals.h = active_vals.h[is.finite(active_vals.h)]
+	  lo.h = min(finite_vals.h)
+	  hi.h = max(finite_vals.h)
+
 	  if(input$color_scheme == 'Continuous'){
-            col_fun.h = colorRamp2(c(min(logOdds[,abs(colSums(logOdds)) >0]),ifelse(discontinuity.check == 0,median(logOdds[,abs(colSums(logOdds)) >0]),0),max(logOdds[,abs(colSums(logOdds)) >0])), c( "white",'yellow' ,"red"))
+	    if(lo.h >= 0){
+	      nonzero.h = finite_vals.h[finite_vals.h > 0]
+	      centre.h = if(length(nonzero.h) > 0) median(nonzero.h) else (lo.h + hi.h) / 2
+	    } else {
+	      centre.h = 0
+	    }
+            col_fun.h = colorRamp2(c(lo.h, centre.h, hi.h), c("white", "yellow", "red"))
           }else{
-            col_fun.h = colorRamp2(c(min(logOdds[,abs(colSums(logOdds)) >0]),0,max(logOdds[,abs(colSums(logOdds)) >0])), c("blue",'white' ,"red"))
+	    centre.h = if(lo.h >= 0) (lo.h + hi.h) / 2 else 0
+            col_fun.h = colorRamp2(c(lo.h, centre.h, hi.h), c("blue", "white", "red"))
           }
           
           
@@ -353,7 +389,7 @@ server <- function(input, output,session) {
             #renderCircos(log_odds[[i]],label = label.tmp,p1=NULL,p2=NULL,out_dir=tempdir0,col_fun=col_fun.h,scale=input$scale)
 	    # to adjust discontinuous values automatically to median instead of 0 for median:
 	    was_transformed = (discontinuity.check > 0) || harmonize_all || harmonize_neg
-	    renderCircos(log_odds[[i]],label = label.tmp,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,discontinuity=was_transformed,col.fun=col_fun.h,label_size.cex=input$label_size,transformed=was_transformed)
+	    renderCircos(log_odds[[i]],label = label.tmp,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,discontinuity=was_transformed,col.fun=col_fun.h,label_size.cex=input$label_size,transformed=was_transformed,self_interactions=(input$self_interactions=='Yes'),grid.col=custom_gc,legend_title=input$legend_title)
           }
 
 

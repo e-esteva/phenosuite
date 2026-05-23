@@ -620,9 +620,20 @@ create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, ski
   }
   return(s)
 }
-cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50, 
-                      out_dir = NULL,max_clust=500,label=NULL) 
+.mem_mb <- function() round(sum(gc()[, 2]), 1)
+.mem_log <- function(...) {
+  msg <- paste0(Sys.time(), " ", ...)
+  message(msg)
+  con <- file("/srv/shiny-server/phenosuite/cluster_mem.log", open = "a")
+  writeLines(msg, con)
+  flush(con)
+  close(con)
+}
+
+cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50,
+                      out_dir = NULL,max_clust=500,label=NULL)
 {
+  .mem_log(glue("[cluster.mod] START | R heap: {.mem_mb()} MB"))
   method <- match.arg(method)
   if (!is(x, "SpatialExperiment")) {
     stop("input is not a SpatialExperiment object")
@@ -644,18 +655,29 @@ cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50,
     dir.create(clusters_dir)
   }
   exprs_mat <- assay(x, "exprs")
+  .mem_log(glue("[cluster.mod] exprs_mat allocated ({nrow(exprs_mat)} x {ncol(exprs_mat)}) | R heap: {.mem_mb()} MB"))
   if (method == "leiden") {
-    g <- scran::buildSNNGraph(exprs_mat, transposed = FALSE, 
-                              k = n_neighbors)
+    n_cells <- ncol(exprs_mat)
+    if (n_cells > 1e5) {
+      .mem_log(glue("[cluster.mod] Large dataset ({n_cells} cells) — using HnswParam for kNN"))
+      g <- scran::buildSNNGraph(exprs_mat, transposed = FALSE,
+                                k = n_neighbors,
+                                BNPARAM = BiocNeighbors::HnswParam())
+    } else {
+      g <- scran::buildSNNGraph(exprs_mat, transposed = FALSE,
+                                k = n_neighbors)
+    }
+    .mem_log(glue("[cluster.mod] SNN graph built ({igraph::vcount(g)} nodes, {igraph::ecount(g)} edges) | R heap: {.mem_mb()} MB"))
     n_clust_prev <- 0
     for (res_num in resolution) {
 
       incProgress((1/6)/length(resolution), detail = glue('clustering @ resolution {res_num}'))
-      message(glue("clustering using resolution of {res_num}"))
+      .mem_log(glue("[cluster.mod] leiden res={res_num} starting | R heap: {.mem_mb()} MB"))
       set.seed(99)
-      clusters <- igraph::cluster_leiden(g, objective_function = "modularity", 
+      clusters <- igraph::cluster_leiden(g, objective_function = "modularity",
                                          resolution_parameter = res_num, n_iterations = 10)
       clusters <- clusters$membership
+      .mem_log(glue("[cluster.mod] leiden res={res_num} done ({length(unique(clusters))} clusters) | R heap: {.mem_mb()} MB"))
       res_str <- format(as.numeric(res_num), nsmall = 1)
       res_str <- stringr::str_pad(res_str, width = 3, side = "left", 
                                   pad = "0")
@@ -698,10 +720,14 @@ cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50,
 	break
       }
     }
+    rm(g, exprs_mat)
+    gc()
+    .mem_log(glue("[cluster.mod] freed graph + exprs_mat | R heap: {.mem_mb()} MB"))
   }
   if (!is.null(out_dir)) {
-    message("saving object")
+    .mem_log(glue("[cluster.mod] saveRDS starting | R heap: {.mem_mb()} MB"))
     saveRDS(x, paste0(out_dir, "/spe.rds"))
+    .mem_log(glue("[cluster.mod] saveRDS done | R heap: {.mem_mb()} MB"))
   }
   return(x)
 }
@@ -842,8 +868,17 @@ select_intensity_columns <- function(filepath,
   cyto_idx     <- find_compartment("cytoplasm.*intensity|intensity.*cytoplasm")
 
   # All intensity columns as a fallback
-
   all_intensity_idx <- find_compartment("intensity")
+
+  # Cellpose-style fallback: no compartment keywords, use only Mean_intensity columns
+  if (length(cell_idx) == 0 && length(nucleus_idx) == 0 && length(cyto_idx) == 0) {
+    mean_intensity_idx <- which(grepl("_mean_intensity$", names_lower))
+    if (length(mean_intensity_idx) > 0) {
+      all_intensity_idx <- mean_intensity_idx
+      cell_idx <- mean_intensity_idx
+      nucleus_idx <- mean_intensity_idx
+    }
+  }
 
   if (is.null(nuclear_markers)) {
     # Job 1: use Cell Intensity for everything, drop failed markers

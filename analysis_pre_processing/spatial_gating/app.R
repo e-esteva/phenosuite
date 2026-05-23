@@ -146,6 +146,10 @@ ui <- fluidPage(
         uiOutput("channelDropdownUI"),
         hr(),
 
+        # Bounding box ROI filter
+        uiOutput("bboxUI"),
+        hr(),
+
         # Gate drawing controls
         h4("Gates"),
         p(style="font-size:12px; color:#666;",
@@ -234,6 +238,8 @@ server <- function(input, output, session) {
     method       = NULL,
     unit         = NA,
     int_cols     = NULL,
+    x_range      = NULL,     # data extent used as image boundary for bbox clamping
+    y_range      = NULL,
     # Gate state
     gates        = list(),   # list of finalized polygons: each list(x, y, color)
     current_poly = NULL,     # in-progress polygon: data.frame(x, y)
@@ -265,6 +271,8 @@ server <- function(input, output, session) {
       rv$method       <- result$method
       rv$unit         <- result$unit
       rv$int_cols     <- intensity_cols(result$df)
+      rv$x_range      <- range(result$df$x, na.rm = TRUE)
+      rv$y_range      <- range(result$df$y, na.rm = TRUE)
       rv$gates        <- list()
       rv$current_poly <- NULL
       rv$selected     <- NULL
@@ -305,6 +313,104 @@ server <- function(input, output, session) {
     )
   })
 
+  # ---- Bounding box UI ----------------------------------------------------
+  output$bboxUI <- renderUI({
+    req(rv$x_range, rv$y_range)
+    xr <- rv$x_range
+    yr <- rv$y_range
+
+    tagList(
+      h4("Bounding Box"),
+      checkboxInput("enable_bbox", "Restrict to bounding box", value = FALSE),
+      conditionalPanel(
+        condition = "input.enable_bbox",
+        helpText(style = "font-size:11px; margin-bottom:4px;",
+                 "Coordinates are clamped to the data extent if they exceed it."),
+        fluidRow(
+          column(6, numericInput("bbox_xmin", "X min",
+                                 value = round(xr[1], 2), step = 1, width = "100%")),
+          column(6, numericInput("bbox_xmax", "X max",
+                                 value = round(xr[2], 2), step = 1, width = "100%"))
+        ),
+        fluidRow(
+          column(6, numericInput("bbox_ymin", "Y min",
+                                 value = round(yr[1], 2), step = 1, width = "100%")),
+          column(6, numericInput("bbox_ymax", "Y max",
+                                 value = round(yr[2], 2), step = 1, width = "100%"))
+        )
+      )
+    )
+  })
+
+  # ---- Bbox clamping observers ---------------------------------------------
+  # Each fires when the user edits a coordinate; if out-of-bounds, warns and
+  # snaps the input back to the nearest valid data-extent value.
+
+  observeEvent(input$bbox_xmin, {
+    req(rv$x_range); val <- input$bbox_xmin; lo <- rv$x_range[1]
+    if (!is.na(val) && val < lo) {
+      showNotification(
+        paste0("X min is below the data extent (", round(lo, 2),
+               "). Value clamped to the data minimum."), type = "warning")
+      updateNumericInput(session, "bbox_xmin", value = lo)
+    }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$bbox_xmax, {
+    req(rv$x_range); val <- input$bbox_xmax; hi <- rv$x_range[2]
+    if (!is.na(val) && val > hi) {
+      showNotification(
+        paste0("X max exceeds the data extent (", round(hi, 2),
+               "). Value clamped to the data maximum."), type = "warning")
+      updateNumericInput(session, "bbox_xmax", value = hi)
+    }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$bbox_ymin, {
+    req(rv$y_range); val <- input$bbox_ymin; lo <- rv$y_range[1]
+    if (!is.na(val) && val < lo) {
+      showNotification(
+        paste0("Y min is below the data extent (", round(lo, 2),
+               "). Value clamped to the data minimum."), type = "warning")
+      updateNumericInput(session, "bbox_ymin", value = lo)
+    }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$bbox_ymax, {
+    req(rv$y_range); val <- input$bbox_ymax; hi <- rv$y_range[2]
+    if (!is.na(val) && val > hi) {
+      showNotification(
+        paste0("Y max exceeds the data extent (", round(hi, 2),
+               "). Value clamped to the data maximum."), type = "warning")
+      updateNumericInput(session, "bbox_ymax", value = hi)
+    }
+  }, ignoreInit = TRUE)
+
+  # ---- Bbox-filtered data reactive ----------------------------------------
+  # Returns rv$processed filtered to the bounding box when active.
+  # Falls back to full data when the checkbox is off or the inputs aren't
+  # rendered yet (conditionalPanel hidden).
+  bbox_data <- reactive({
+    req(rv$processed)
+    df <- rv$processed
+    if (!isTRUE(input$enable_bbox)) return(df)
+    xmin <- input$bbox_xmin; xmax <- input$bbox_xmax
+    ymin <- input$bbox_ymin; ymax <- input$bbox_ymax
+    if (is.null(xmin) || is.null(xmax) || is.null(ymin) || is.null(ymax)) return(df)
+    if (anyNA(c(xmin, xmax, ymin, ymax))) return(df)
+    df[df$x >= xmin & df$x <= xmax & df$y >= ymin & df$y <= ymax, ]
+  })
+
+  # Re-apply gates whenever the bbox filter changes so the selection stays
+  # consistent with whatever region is currently in view.
+  observeEvent(bbox_data(), {
+    if (length(rv$gates) > 0) {
+      rv$selected <- apply_gates(rv$gates, bbox_data())
+    } else {
+      rv$selected <- NULL
+    }
+  }, ignoreInit = TRUE)
+
   # ---- Gate status banner -------------------------------------------------
   output$gateStatusUI <- renderUI({
     n_vert  <- if (is.null(rv$current_poly)) 0 else nrow(rv$current_poly)
@@ -334,14 +440,44 @@ server <- function(input, output, session) {
 
   # ---- Selection info banner ----------------------------------------------
   output$selectionInfoUI <- renderUI({
-    if (is.null(rv$selected)) return(NULL)
-    n_all <- nrow(rv$processed); n_sel <- nrow(rv$selected)
-    pct   <- round(100 * n_sel / n_all, 1)
-    div(class="info-box",
-        style="background:#0d2b1a; border-left:3px solid #28a745;",
-        HTML(paste0("<b>Gated total:</b> ", format(n_sel, big.mark=","),
-                    " / ", format(n_all, big.mark=","),
-                    " cells (", pct, "%)")))
+    req(rv$processed)
+    n_all  <- nrow(rv$processed)
+    bbox_on <- isTRUE(input$enable_bbox) &&
+               !is.null(input$bbox_xmin) && !anyNA(c(input$bbox_xmin, input$bbox_xmax,
+                                                      input$bbox_ymin, input$bbox_ymax))
+    n_view <- if (bbox_on) nrow(bbox_data()) else n_all
+
+    if (is.null(rv$selected) && !bbox_on) return(NULL)
+
+    if (is.null(rv$selected)) {
+      # Bbox active but no gates yet — show in-view cell count
+      return(div(class = "info-box",
+                 style = "background:#1a2030; border-left:3px solid #3498db;",
+                 HTML(paste0("<b>In view:</b> ",
+                             format(n_view, big.mark = ","), " / ",
+                             format(n_all,  big.mark = ","),
+                             " cells (", round(100 * n_view / n_all, 1), "%)"))))
+    }
+
+    n_sel <- nrow(rv$selected)
+    pct   <- round(100 * n_sel / n_view, 1)
+
+    if (bbox_on && n_view < n_all) {
+      div(class = "info-box",
+          style = "background:#0d2b1a; border-left:3px solid #28a745;",
+          HTML(paste0(
+            "<b>Gated:</b> ", format(n_sel, big.mark = ","),
+            " / ", format(n_view, big.mark = ","), " in view (", pct, "%)<br>",
+            "<span style='color:#aaa; font-size:11px;'>",
+            format(n_all, big.mark = ","), " cells total</span>"
+          )))
+    } else {
+      div(class = "info-box",
+          style = "background:#0d2b1a; border-left:3px solid #28a745;",
+          HTML(paste0("<b>Gated total:</b> ", format(n_sel, big.mark = ","),
+                      " / ", format(n_all, big.mark = ","),
+                      " cells (", pct, "%)")))
+    }
   })
 
   # ---- Plot click: add vertex to current polygon --------------------------
@@ -373,7 +509,7 @@ server <- function(input, output, session) {
     rv$current_poly <- NULL
 
     withProgress(message="Applying gates\u2026", value=0.5, {
-      rv$selected <- apply_gates(rv$gates, rv$processed)
+      rv$selected <- apply_gates(rv$gates, bbox_data())
     })
 
     showNotification(
@@ -390,7 +526,7 @@ server <- function(input, output, session) {
       showNotification("In-progress gate cleared.", type="message")
     } else if (length(rv$gates) > 0) {
       rv$gates <- rv$gates[-length(rv$gates)]
-      rv$selected <- if (length(rv$gates) > 0) apply_gates(rv$gates, rv$processed) else NULL
+      rv$selected <- if (length(rv$gates) > 0) apply_gates(rv$gates, bbox_data()) else NULL
       showNotification(
         paste0("Last gate removed. ", length(rv$gates), " gate(s) remaining."),
         type="message")
@@ -408,7 +544,7 @@ server <- function(input, output, session) {
   # ---- Main plot ----------------------------------------------------------
   output$scatterPlot <- renderPlot({
     req(rv$processed)
-    df    <- rv$processed
+    df    <- bbox_data()
     x_lab <- if (!is.na(rv$unit)) paste0("X (", rv$unit, ")") else "X"
     y_lab <- if (!is.na(rv$unit)) paste0("Y (", rv$unit, ")") else "Y"
 

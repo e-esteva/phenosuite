@@ -119,6 +119,22 @@ server <- function(input, output,session) {
   })
   
   
+  # Generate default hex colors for n celltypes using R's default palette
+  default_grid_hex <- function(n) {
+    pal <- palette()
+    cols <- pal[(seq(n) - 1) %% length(pal) + 1]
+    sapply(cols, function(c) rgb(t(col2rgb(c)), maxColorValue = 255), USE.NAMES = FALSE)
+  }
+
+  output$grid_color_inputs <- renderUI({
+    celltypes <- input$celltype_selection
+    req(length(celltypes) > 0)
+    hex_defaults <- default_grid_hex(length(celltypes))
+    lapply(seq_along(celltypes), function(i) {
+      textInput(glue('grid_col_{i}'), celltypes[i], value = hex_defaults[i])
+    })
+  })
+
   tempdir=file.path(tempdir(), as.integer(Sys.time()))
   dir.create(tempdir)
   print(as.character(tempdir))
@@ -214,12 +230,18 @@ server <- function(input, output,session) {
         }
       }
 
-      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=NULL,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed,self_interactions = (input$self_interactions == 'Yes'))
+      # Build custom grid colors if enabled
+      custom_gc <- NULL
+      if (input$custom_grid_colors == 'Yes') {
+        ct_names <- colnames(log_odds)
+        custom_gc <- setNames(
+          sapply(seq_along(ct_names), function(i) input[[glue('grid_col_{i}')]]),
+          ct_names
+        )
+      }
+
+      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=NULL,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed,self_interactions = (input$self_interactions == 'Yes'),grid.col=custom_gc,legend_title=input$legend_title)
     }
-
-
-
-
 
     if(input$Run > 0){
 
@@ -235,7 +257,17 @@ server <- function(input, output,session) {
           label <- glue('{label}_transformed')
         }
       }
-      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed,self_interactions = (input$self_interactions == 'Yes'))
+
+      custom_gc <- NULL
+      if (input$custom_grid_colors == 'Yes') {
+        ct_names <- colnames(log_odds)
+        custom_gc <- setNames(
+          sapply(seq_along(ct_names), function(i) input[[glue('grid_col_{i}')]]),
+          ct_names
+        )
+      }
+
+      renderCircos(log_odds,label = label,p1=NULL,p2=NULL,out_dir=tempdir0,continuous_color_scheme = ifelse(input$color_scheme=='Continuous',T,F),scale=input$scale,label_size.cex=input$label_size,transformed = was_transformed,self_interactions = (input$self_interactions == 'Yes'),grid.col=custom_gc,legend_title=input$legend_title)
       tracker$analysis_completed()
     }
 

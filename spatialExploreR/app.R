@@ -64,6 +64,7 @@ ui <- fluidPage(
       uiOutput("feature_toggle_ui"),
       uiOutput("assay_select_ui"),
       uiOutput("feature_select_ui"),
+      uiOutput("interactive_toggle_ui"),
       hr(class = "sep"),
       
       # ── Mutate ─────────────────────────────────────────────────────────────
@@ -107,6 +108,9 @@ server <- function(input, output, session) {
   prov_dir <- file.path(tempdir(), paste0("spatialExploreR_", session$token))
   dir.create(prov_dir, showWarnings = FALSE)
   tracker <- ProvenanceTracker$new("spatialExploreR", session, prov_dir)
+
+  PLOTLY_THRESHOLD <- 50000L
+  PLOTLY_SAMPLE    <- 20000L
 
   # Reactive: loaded SPE object (mutable copy) --------------------------------
   spe <- reactiveVal(NULL)
@@ -154,7 +158,12 @@ server <- function(input, output, session) {
     nms <- names(cd)
     nms[vapply(nms, function(n) is.numeric(cd[[n]]), logical(1))]
   })
-  
+
+  is_large <- reactive({
+    req(spe())
+    ncol(spe()) > PLOTLY_THRESHOLD
+  })
+
   # ── Plot type selector ──────────────────────────────────────────────────
   has_spatial <- reactive({
     req(spe())
@@ -238,6 +247,18 @@ server <- function(input, output, session) {
                          server = TRUE)
   })
   
+  # ── Interactive toggle for large discrete datasets ──────────────────────────
+  output$interactive_toggle_ui <- renderUI({
+    req(spe())
+    if (!is_large()) return(NULL)
+    if (!isTRUE(tryCatch(is_discrete(), error = function(e) FALSE))) return(NULL)
+    checkboxInput("use_plotly",
+                  paste0("Enable interactive plot (sampled to ",
+                         formatC(PLOTLY_SAMPLE, format = "d", big.mark = ","),
+                         " cells)"),
+                  value = FALSE)
+  })
+
   # ── Is the current plot discrete? ──────────────────────────────────────────
   is_discrete <- reactive({
     req(spe())
@@ -254,7 +275,9 @@ server <- function(input, output, session) {
   # ── Dynamic plot container ─────────────────────────────────────────────────
   output$plot_container <- renderUI({
     req(spe())
-    if (is_discrete()) {
+    use_interactive <- isTRUE(is_discrete()) &&
+      (!is_large() || isTRUE(input$use_plotly))
+    if (use_interactive) {
       plotlyOutput("plot_interactive", height = "600px")
     } else {
       plotOutput("plot_static", height = "600px")
@@ -353,17 +376,22 @@ server <- function(input, output, session) {
   output$plot_interactive <- renderPlotly({
     p <- make_plot()
     req(p)
-    
+
     obj <- spe()
-    cc  <- input$colour_col
-    cell_ids <- colnames(obj)
-    
-    # Pull colour values from the ggplot's own data (already safe)
-    plot_data <- ggplot_build(p)$plot$data
-    colour_vals <- plot_data[[".colour_by."]]
+    n_cells <- ncol(obj)
+
+    if (n_cells > PLOTLY_SAMPLE) {
+      idx <- sort(sample.int(n_cells, PLOTLY_SAMPLE))
+      p$data <- p$data[idx, ]
+      cell_ids <- colnames(obj)[idx]
+    } else {
+      cell_ids <- colnames(obj)
+    }
+
+    cc <- input$colour_col
+    colour_vals <- p$data[[".colour_by."]]
     hover_text <- paste0("cell: ", cell_ids, "\n", cc, ": ", colour_vals)
-    
-    # Convert ggplot → plotly with custom tooltip
+
     pp <- ggplotly(p, tooltip = "none") %>%
       style(
         text = hover_text,
@@ -374,8 +402,8 @@ server <- function(input, output, session) {
         dragmode   = "zoom",
         legend     = list(itemsizing = "constant")
       ) %>%
-      toWebGL()   # GPU-accelerated for large datasets
-    
+      toWebGL()
+
     pp
   })
   

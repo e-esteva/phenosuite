@@ -279,6 +279,10 @@ server <- function(input, output, session) {
     has_nucleus <- str_detect(cols, regex('nucleus', ignore_case = TRUE))
     has_measurement <- str_detect(cols, regex('intensity|mean', ignore_case = TRUE))
     nuclear_cols <- cols[has_nucleus & has_measurement]
+    if(length(nuclear_cols) == 0) {
+      # Cellpose-style: no compartment keywords, use Mean_intensity columns as nuclear
+      nuclear_cols <- cols[grepl("_Mean_intensity$", cols, ignore.case = TRUE)]
+    }
     message("extract_nuclear_markers found: ", paste(nuclear_cols, collapse = ", "))
     return(nuclear_cols)
   }
@@ -300,6 +304,14 @@ server <- function(input, output, session) {
       # Remove leading/trailing separators and collapse runs of separators
       markers <- gsub("^[\\._ :()]+|[\\._ :()]+$", "", markers)
       markers <- gsub("[\\._ :()]+", "_", markers)
+      markers <- unique(markers)
+      markers <- markers[markers != "" & markers != "_"]
+    } else if(any(grepl("_Mean_intensity$", cols, ignore.case = TRUE))) {
+      # Cellpose-style columns: MARKER_Statistic_intensity (no compartment keywords)
+      # Keep only Mean_intensity columns to avoid checkbox explosion
+      mean_cols <- cols[grepl("_Mean_intensity$", cols, ignore.case = TRUE)]
+      markers <- gsub("[_\\.]?Mean[_\\.]?intensity$", "", mean_cols, ignore.case = TRUE)
+      markers <- gsub("^[\\._ :()]+|[\\._ :()]+$", "", markers)
       markers <- unique(markers)
       markers <- markers[markers != "" & markers != "_"]
     } else {

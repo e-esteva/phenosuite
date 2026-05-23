@@ -425,8 +425,10 @@ create_object.mod.v0=function (x, expression_cols = NULL, metadata_cols = NULL, 
   
   # (Incomplete rows already dropped above — no NA imputation needed)
   
-  s <- SpatialExperiment::SpatialExperiment(assay = list(counts = t(exprs)), 
-                                            colData = x, spatialCoordsNames = c("x", "y"))
+  xy_mat <- as.matrix(x[, c("x", "y")])
+  x <- x[, setdiff(names(x), c("x", "y")), drop = FALSE]
+  s <- SpatialExperiment::SpatialExperiment(assay = list(counts = t(exprs)),
+                                            colData = x, spatialCoords = xy_mat)
   if (!is.null(transformation)) {
     s <- transform(s, method = transformation, out_dir = out_dir)
     s <- run_umap(s, n_threads = 4)
@@ -434,7 +436,14 @@ create_object.mod.v0=function (x, expression_cols = NULL, metadata_cols = NULL, 
   if (!is.null(out_dir)) {
     message("saving object")
     write_rds(s,file=paste0(out_dir, "/spe.rds"))
-    #saveRDS(s, paste0(out_dir, "/spe.rds"))
+    spe_bundle <- list(
+      assays = lapply(SummarizedExperiment::assays(s), as.matrix),
+      colData = as.data.frame(SummarizedExperiment::colData(s)),
+      rowData = as.data.frame(SummarizedExperiment::rowData(s)),
+      spatialCoords = SpatialExperiment::spatialCoords(s),
+      reducedDims = as.list(SingleCellExperiment::reducedDims(s))
+    )
+    saveRDS(spe_bundle, file = paste0(out_dir, "/spe_portable.rds"))
   }
   return(s)
 }
@@ -735,8 +744,10 @@ create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, ski
   
   # (Incomplete rows already dropped above — no NA imputation needed)
   
-  s <- SpatialExperiment::SpatialExperiment(assay = list(counts = t(exprs)), 
-                                            colData = x, spatialCoordsNames = c("x", "y"))
+  xy_mat <- as.matrix(x[, c("x", "y")])
+  x <- x[, setdiff(names(x), c("x", "y")), drop = FALSE]
+  s <- SpatialExperiment::SpatialExperiment(assay = list(counts = t(exprs)),
+                                            colData = x, spatialCoords = xy_mat)
   if (!is.null(transformation)) {
     s <- transform(s, method = transformation, out_dir = out_dir)
     s <- run_umap(s, n_threads = 4)
@@ -744,12 +755,52 @@ create_object.mod=function (x, expression_cols = NULL, metadata_cols = NULL, ski
   if (!is.null(out_dir)) {
     message("saving object")
     write_rds(s,file=paste0(out_dir, "/spe.rds"))
+    # Portable component bundle — reconstructable on any SpatialExperiment version
+    spe_bundle <- list(
+      assays = lapply(SummarizedExperiment::assays(s), as.matrix),
+      colData = as.data.frame(SummarizedExperiment::colData(s)),
+      rowData = as.data.frame(SummarizedExperiment::rowData(s)),
+      spatialCoords = SpatialExperiment::spatialCoords(s),
+      reducedDims = as.list(SingleCellExperiment::reducedDims(s))
+    )
+    saveRDS(spe_bundle, file = paste0(out_dir, "/spe_portable.rds"))
   }
   return(s)
 }
-cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50, 
-                      out_dir = NULL,max_clust=500,label=NULL) 
+
+#' Reconstruct a SpatialExperiment from a portable bundle saved by the analysis engine.
+#' Works on any R/SpatialExperiment version.
+load_spe_portable <- function(path) {
+  b <- readRDS(path)
+  spe <- SpatialExperiment::SpatialExperiment(
+    assays = b$assays,
+    colData = S4Vectors::DataFrame(b$colData),
+    rowData = S4Vectors::DataFrame(b$rowData),
+    spatialCoords = b$spatialCoords
+  )
+  for (nm in names(b$reducedDims)) {
+    SingleCellExperiment::reducedDim(spe, nm) <- b$reducedDims[[nm]]
+  }
+  spe
+}
+
+.mem_mb <- function() round(sum(gc()[, 2]), 1)
+.rss_mb <- function() {
+  tryCatch(round(as.numeric(system(paste("ps -o rss= -p", Sys.getpid()), intern = TRUE)) / 1024, 1), error = function(e) NA)
+}
+.mem_log <- function(...) {
+  msg <- paste0(Sys.time(), " ", ..., " | RSS: ", .rss_mb(), " MB")
+  message(msg)
+  con <- file("/srv/shiny-server/phenosuite/cluster_mem.log", open = "a")
+  writeLines(msg, con)
+  flush(con)
+  close(con)
+}
+
+cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50,
+                      out_dir = NULL,max_clust=500,label=NULL)
 {
+  .mem_log(glue("[cluster.mod] START | R heap: {.mem_mb()} MB"))
   method <- match.arg(method)
   if (!is(x, "SpatialExperiment")) {
     stop("input is not a SpatialExperiment object")
@@ -771,18 +822,32 @@ cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50,
     dir.create(clusters_dir)
   }
   exprs_mat <- assay(x, "exprs")
+  .mem_log(glue("[cluster.mod] exprs_mat allocated ({nrow(exprs_mat)} x {ncol(exprs_mat)}) | R heap: {.mem_mb()} MB"))
   if (method == "leiden") {
-    g <- scran::buildSNNGraph(exprs_mat, transposed = FALSE, 
-                              k = n_neighbors)
+    n_cells <- ncol(exprs_mat)
+    k_use <- n_neighbors
+    if (n_cells > 1e5) {
+      k_use <- min(n_neighbors, 20L)
+      .mem_log(glue("[cluster.mod] Large dataset ({n_cells} cells) — reducing k from {n_neighbors} to {k_use}, using HnswParam"))
+      g <- scran::buildSNNGraph(exprs_mat, transposed = FALSE,
+                                k = k_use,
+                                BNPARAM = BiocNeighbors::HnswParam(),
+                                BPPARAM = BiocParallel::SerialParam())
+    } else {
+      g <- scran::buildSNNGraph(exprs_mat, transposed = FALSE,
+                                k = k_use)
+    }
+    .mem_log(glue("[cluster.mod] SNN graph built ({igraph::vcount(g)} nodes, {igraph::ecount(g)} edges) | R heap: {.mem_mb()} MB"))
     n_clust_prev <- 0
     for (res_num in resolution) {
 
       incProgress((1/6)/length(resolution), detail = glue('clustering @ resolution {res_num}'))
-      message(glue("clustering using resolution of {res_num}"))
+      .mem_log(glue("[cluster.mod] leiden res={res_num} starting | R heap: {.mem_mb()} MB"))
       set.seed(99)
-      clusters <- igraph::cluster_leiden(g, objective_function = "modularity", 
+      clusters <- igraph::cluster_leiden(g, objective_function = "modularity",
                                          resolution_parameter = res_num, n_iterations = 10)
       clusters <- clusters$membership
+      .mem_log(glue("[cluster.mod] leiden res={res_num} done ({length(unique(clusters))} clusters) | R heap: {.mem_mb()} MB"))
       res_str <- format(as.numeric(res_num), nsmall = 1)
       res_str <- stringr::str_pad(res_str, width = 3, side = "left", 
                                   pad = "0")
@@ -825,10 +890,14 @@ cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50,
 	break
       }
     }
+    rm(g, exprs_mat)
+    gc()
+    .mem_log(glue("[cluster.mod] freed graph + exprs_mat | R heap: {.mem_mb()} MB"))
   }
   if (!is.null(out_dir)) {
-    message("saving object")
+    .mem_log(glue("[cluster.mod] saveRDS starting | R heap: {.mem_mb()} MB"))
     saveRDS(x, paste0(out_dir, "/spe.rds"))
+    .mem_log(glue("[cluster.mod] saveRDS done | R heap: {.mem_mb()} MB"))
   }
   return(x)
 }
@@ -877,6 +946,16 @@ select_intensity_columns <- function(filepath,
   # All expression columns = any column with BOTH a compartment AND measurement keyword
   has_any_compartment <- grepl("cell|nucleus|cytoplasm|membrane", names_norm)
   all_intensity_idx <- which(has_any_compartment & has_measurement)
+
+  # Cellpose-style fallback: no compartment keywords, use only Mean_intensity columns
+  if (length(all_intensity_idx) == 0) {
+    mean_intensity_idx <- which(grepl("mean intensity$", names_norm))
+    if (length(mean_intensity_idx) > 0) {
+      all_intensity_idx <- mean_intensity_idx
+      cell_idx <- mean_intensity_idx
+      nucleus_idx <- mean_intensity_idx
+    }
+  }
 
   message("select_intensity_columns found ", length(cell_idx), " cell columns, ",
           length(nucleus_idx), " nucleus columns, ",

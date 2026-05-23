@@ -87,7 +87,7 @@ RunPhenomenalist.shiny=function(segmentation_file,label,failed.markers=NULL,nucl
     out.label=NULL
     
     data_csv=segmentation_file
-    message(glue('Reading file: {data_csv}'))
+    .mem_log(glue("[pipeline] reading file: {data_csv} | R heap: {.mem_mb()} MB"))
     
     
     message(glue('Skipping columns: {skip_cols}'))
@@ -100,7 +100,9 @@ RunPhenomenalist.shiny=function(segmentation_file,label,failed.markers=NULL,nucl
     message(out_dir)
     
     if('lock.rds' %in% list.files(out_dir)){
+      .mem_log(glue("[pipeline] lock.rds found — loading existing spe.rds | R heap: {.mem_mb()} MB"))
       spe = readRDS(glue('{out_dir}/spe.rds'))
+      .mem_log(glue("[pipeline] spe.rds loaded ({ncol(spe)} cells, {nrow(spe)} markers) | R heap: {.mem_mb()} MB"))
       spe = cluster.mod(spe, resolution = resolutions, out_dir = out_dir)
       names(colData(spe))
       saveRDS(spe,glue(out_dir,'/spe.rds'))
@@ -118,7 +120,9 @@ RunPhenomenalist.shiny=function(segmentation_file,label,failed.markers=NULL,nucl
       
     }else{
       incProgress(1/6, detail = 'Generating Phenomenalist object')
+      .mem_log(glue("[pipeline] create_object.mod starting | R heap: {.mem_mb()} MB"))
       spe <- create_object.mod(data_csv, skip_cols = skip_cols, transformation = "z", out_dir = out_dir,expression_cols = expression.columns,classifier.label = classifier_label,min.cells = min.cells,max.cells = max.cells)
+      .mem_log(glue("[pipeline] create_object.mod done ({ncol(spe)} cells, {nrow(spe)} markers) | R heap: {.mem_mb()} MB"))
 
       if ("tile_num" %in% names(colData(spe))) plot_spatial(spe, color_by = "tile_num",out_dir = out_dir)
       
@@ -127,18 +131,25 @@ RunPhenomenalist.shiny=function(segmentation_file,label,failed.markers=NULL,nucl
       incProgress(1/6, detail = 'Generating spatial objects')
       spatial_dir = paste0(out_dir, "/spatial-expression")
       dir.create(spatial_dir, showWarnings = FALSE)
+      .mem_log(glue("[pipeline] plot_spatial starting ({length(names(spe))} markers) | R heap: {.mem_mb()} MB"))
       plot_spatial(spe, color_by = names(spe), out_dir = spatial_dir)
+      .mem_log(glue("[pipeline] plot_spatial done | R heap: {.mem_mb()} MB"))
       plot_spatial(spe, color_by = names(spe), smooth = TRUE, out_dir = spatial_dir)
+      .mem_log(glue("[pipeline] plot_spatial smooth done | R heap: {.mem_mb()} MB"))
       
       incProgress(1/6, detail = 'Generating dimensionality reductions')
       umap_dir = paste0(out_dir, "/UMAP-expression")
       dir.create(umap_dir, showWarnings = FALSE)
+      .mem_log(glue("[pipeline] plot_dr UMAP starting | R heap: {.mem_mb()} MB"))
       plot_dr(spe, dr = "UMAP", color_by = names(spe), out_dir = umap_dir)
+      .mem_log(glue("[pipeline] plot_dr UMAP done | R heap: {.mem_mb()} MB"))
       plot_dr(spe, dr = "UMAP", color_by = names(spe), smooth = TRUE, out_dir = umap_dir)
+      .mem_log(glue("[pipeline] plot_dr UMAP smooth done | R heap: {.mem_mb()} MB"))
       
       
       
       incProgress(1/6, detail = 'Initiating clustering')
+      .mem_log(glue("[pipeline] cluster.mod starting | R heap: {.mem_mb()} MB"))
       spe = cluster.mod(spe, resolution = resolutions, out_dir = out_dir)
       names(colData(spe))
       #saveRDS(spe,glue(out_dir,'/spe.rds'))

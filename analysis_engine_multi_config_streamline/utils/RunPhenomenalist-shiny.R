@@ -99,19 +99,41 @@ RunPhenomenalist.shiny=function(segmentation_file,label,failed.markers=NULL,nucl
       if ("tile_num" %in% names(colData(spe))) plot_spatial(spe, color_by = "tile_num",out_dir = out_dir)
       if ("Classifier_Label" %in% names(colData(spe))) plot_spatial(spe, color_by = "Classifier_Label",out_dir = out_dir)
       
+      n_cells <- ncol(spe)
+      large_dataset <- n_cells > 1e5
+
       incProgress(1/6, detail = 'Generating spatial objects')
       spatial_dir = paste0(out_dir, "/spatial-expression")
       dir.create(spatial_dir, showWarnings = FALSE)
-      plot_spatial(spe, color_by = names(spe), out_dir = spatial_dir)
+      if (!large_dataset) {
+        .mem_log(glue("[pipeline] plot_spatial base starting ({length(names(spe))} markers, {n_cells} cells) | R heap: {.mem_mb()} MB"))
+        plot_spatial(spe, color_by = names(spe), out_dir = spatial_dir)
+        gc()
+      } else {
+        .mem_log(glue("[pipeline] skipping base spatial plots ({n_cells} cells > 100k) | R heap: {.mem_mb()} MB"))
+      }
+      .mem_log(glue("[pipeline] plot_spatial smooth starting | R heap: {.mem_mb()} MB"))
       plot_spatial(spe, color_by = names(spe), smooth = TRUE, out_dir = spatial_dir)
-      
+      gc()
+      .mem_log(glue("[pipeline] plot_spatial done | R heap: {.mem_mb()} MB"))
+
       incProgress(1/6, detail = 'Generating dimensionality reductions')
       umap_dir = paste0(out_dir, "/UMAP-expression")
       dir.create(umap_dir, showWarnings = FALSE)
-      plot_dr(spe, dr = "UMAP", color_by = names(spe), out_dir = umap_dir)
+      if (!large_dataset) {
+        .mem_log(glue("[pipeline] plot_dr UMAP base starting | R heap: {.mem_mb()} MB"))
+        plot_dr(spe, dr = "UMAP", color_by = names(spe), out_dir = umap_dir)
+        gc()
+      } else {
+        .mem_log(glue("[pipeline] skipping base UMAP plots ({n_cells} cells > 100k) | R heap: {.mem_mb()} MB"))
+      }
+      .mem_log(glue("[pipeline] plot_dr UMAP smooth starting | R heap: {.mem_mb()} MB"))
       plot_dr(spe, dr = "UMAP", color_by = names(spe), smooth = TRUE, out_dir = umap_dir)
-      
+      gc()
+      .mem_log(glue("[pipeline] plot_dr done | R heap: {.mem_mb()} MB"))
+
       incProgress(1/6, detail = 'Initiating clustering')
+      .mem_log(glue("[pipeline] cluster.mod starting | R heap: {.mem_mb()} MB"))
       spe = cluster.mod(spe, resolution = resolutions, out_dir = out_dir)
       names(colData(spe))
       write_rds(spe,glue(out_dir,'/spe.rds'))

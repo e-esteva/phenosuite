@@ -53,8 +53,13 @@ ui <- fluidPage(
       selectInput('color_scheme','Select Color Scheme',choices = c('Continuous','Divergent'),selected = 'Continuous'),
       selectInput('scale','Scale Sector Width',choices = c(T,F),selected = T),
       numericInput('label_size','Label Size',0.9),
+      textInput('legend_title','Legend Title','log-odds'),
       plotOutput("circos")%>% withSpinner(color="#0dc5c1"),
       
+      selectInput('self_interactions','Include Self-Interactions',choices = c('No','Yes'),selected = 'No'),
+      selectInput('custom_grid_colors','Customize Celltype Colors',choices = c('No','Yes'),selected = 'No'),
+      conditionalPanel(condition="input.custom_grid_colors=='Yes'",uiOutput("grid_color_inputs")),
+      uiOutput('transform_warning'),
       selectInput('action','Select Operation',choices = c('Integrate','Harmonize')),
       selectInput('view','Select View',choices = c('Global','Unimodal')),
       conditionalPanel(condition="input.view=='Unimodal'",selectInput('ref_selection','Select Reference Celltype',choices = "",selected = "")),

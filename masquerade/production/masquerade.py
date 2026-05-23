@@ -54,7 +54,7 @@ def PreProcessImage(image_source, spatial_metadata, adjust_coords=True):
         x_min, x_max, y_min, y_max = bounds
         image = image[:, y_min:y_max, x_min:x_max]
 
-    raw_img_size = np.array(image, dtype="uint8").nbytes / 1e9
+    raw_img_size = (np.prod(image.shape) * np.dtype("uint8").itemsize) / 1e9
     return image, raw_img_size, bounds
 
 
@@ -71,8 +71,12 @@ def get_mask_channels(
     x_min, x_max, y_min, y_max = bounds
     cluster_ids = spatial_metadata["cluster"].unique()
 
-    # Pre-compute the summed image once (across channels → 2-D)
+    # Sum across channels → 2-D, then release the full image immediately.
+    # image.sum() on uint16 promotes to float64 (8× per pixel), so freeing
+    # the original C×H×W array before proceeding is critical.
     summed_image = image.sum(axis=0)  # (H, W)
+    del image
+    gc.collect()
 
     channels = {}
     compression_factor = 1.0
@@ -175,16 +179,16 @@ def compress_marker_channels(
 
 
 def writeMaskTiff(channels, outPath):
-    """Stack all channels and write an ImageJ-compatible TIFF."""
+    """Write channels page-by-page to an ImageJ-compatible TIFF.
+
+    Avoids np.stack which would duplicate all channels into a single
+    contiguous array, doubling peak memory at write time.
+    """
     labels = list(channels.keys())
-    stack = np.stack([channels[k] for k in labels], axis=0).astype("uint8")
 
-    tifffile.imwrite(
-        str(outPath),
-        stack,
-        imagej=True,
-        metadata={"Labels": labels},
-    )
-
-    del stack
-    gc.collect()
+    with tifffile.TiffWriter(str(outPath), imagej=True) as tw:
+        for k in labels:
+            page = channels[k].astype("uint8")
+            tw.write(page, contiguous=True, metadata={"Labels": labels} if k == labels[0] else None)
+            del page
+        gc.collect()
