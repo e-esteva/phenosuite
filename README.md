@@ -1,4 +1,4 @@
-# PhenoSuite
+# PhenoSuite ![PhenoSuite Logo](assets/phenosuite_logo.png)
 
 An integrated bioinformatics platform for **single-cell spatial omics** analysis, built on R Shiny. Developed by the Translational Immunology Center (TrIC) at NYU, PhenoSuite provides modular tools for multiplexed immunofluorescence imaging (CODEX/PhenoCycler), spatial transcriptomics (MERFISH), cellular phenotyping, spatial interaction analysis, and multi-modal data integration.
 
