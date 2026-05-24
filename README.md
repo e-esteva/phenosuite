@@ -1,4 +1,3 @@
-# PhenoSuite
 <p align="center">
   <img src="assets/phenosuite_logo.png" width="180">
 </p>
