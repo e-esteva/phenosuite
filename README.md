@@ -520,4 +520,10 @@ The Docker setup is strongly recommended — it handles all of the above automat
 
 ## License & Citation
 
-See the Phenomenalist package and individual module headers for license information. Please cite the Translational Immunology Center (TrIC) at NYU when using this platform in publications.
+See the Phenomenalist package and individual module headers for license information.
+
+If you use PhenoSuite in your research, please cite it:
+
+> Esteva, E. *PhenoSuite: An Integrated Platform for Single-Cell Spatial Omics Analysis.* Translational Immunology Center (TrIC), New York University. https://github.com/e-esteva/phenosuite
+
+A machine-readable citation is available in [`CITATION.cff`](CITATION.cff). GitHub will automatically render a "Cite this repository" button from it.

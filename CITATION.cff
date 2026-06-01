@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use PhenoSuite in your research, please cite it as below."
+title: "PhenoSuite: An Integrated Platform for Single-Cell Spatial Omics Analysis"
+type: software
+authors:
+  - family-names: Esteva
+    given-names: Eduardo
+    affiliation: "Translational Immunology Center (TrIC), New York University"
+repository-code: "https://github.com/e-esteva/phenosuite"
+url: "https://github.com/e-esteva/phenosuite"
+license: MIT
+keywords:
+  - spatial-omics
+  - single-cell
+  - multiplexed-imaging
+  - CODEX
+  - PhenoCycler
+  - MERFISH
+  - spatial-transcriptomics
+  - bioinformatics
+  - R-Shiny
+date-released: "2026-03-20"
+abstract: >-
+  PhenoSuite is an integrated bioinformatics platform for single-cell
+  spatial omics analysis, built on R Shiny. Developed by the Translational
+  Immunology Center (TrIC) at NYU, it provides modular tools for
+  multiplexed immunofluorescence imaging (CODEX/PhenoCycler), spatial
+  transcriptomics (MERFISH), cellular phenotyping, spatial interaction
+  analysis, and multi-modal data integration. The entire platform ships
+  as a single Docker image.
