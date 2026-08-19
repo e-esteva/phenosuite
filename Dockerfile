@@ -108,19 +108,17 @@ RUN install2.r --error --skipinstalled \
     viridis \
     zip
 
-# ── Layer 5b (optional): Gemma 3 phenotyper ──────────────
-# Uncomment to enable gemma_phenotyper/production/ app.
-# Supports both the 1B text-only checkpoint and the 4B/12B/27B multimodal
-# checkpoints (incl. the *-qat-*-unquantized bases) — transformers>=4.50.0
-# is the floor where Gemma 3 (Gemma3ForConditionalGeneration) landed in a
-# stable release.
-# CPU-only torch (~230 MB) — remove --index-url line for GPU builds.
-# RUN pip install --no-cache-dir \
-#     "torch" --index-url https://download.pytorch.org/whl/cpu \
-#     "transformers>=4.50.0" \
-#     "peft>=0.10.0" \
-#     "accelerate>=0.28.0" \
-#     "bitsandbytes>=0.43.0"
+# ── Layer 5b (intentionally omitted): HF/torch backend ───
+# The gemma_phenotyper GUI is Ollama-only: it calls a running Ollama server
+# over HTTP from R and needs no Python ML stack at all. torch + transformers
+# would add ~2-3 GB to this image, and CPU-only inference on a 12B checkpoint
+# is impractical anyway (hours per sample).
+#
+# The HuggingFace backend lives in phenosuite-CLI/gemma-phenotyper, which runs
+# on GPU nodes where it belongs. If you ever want it in this container, install:
+#   torch (--index-url https://download.pytorch.org/whl/cpu for CPU-only)
+#   transformers>=5.10.0   # Gemma 4 floor; >=4.50.0 suffices for Gemma 3 only
+#   peft accelerate bitsandbytes
 
 # ── Layer 5: GitHub packages ─────────────────────────────
 RUN R -e "remotes::install_github('igordot/phenomenalist', dependencies=FALSE)"
