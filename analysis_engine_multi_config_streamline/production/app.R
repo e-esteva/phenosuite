@@ -1123,7 +1123,7 @@ server <- function(input, output, session) {
       # Check if source files exist before sourcing
       source_files <- c(
         '/srv/shiny-server/phenomenalist/analysis_engine_multi_config_streamline/utils/RunPhenomenalist-shiny.R',
-        '/srv/shiny-server/phenomenalist/analysis_engine_multi_config_streamline/utils/Phenomenalist-utils-shiny.R'
+        '/srv/shiny-server/phenomenalist/analysis_engine_multi_config_streamline/utils/phenomenalist-utils-shiny.R'
       )
       
       missing_files <- source_files[!file.exists(source_files)]
