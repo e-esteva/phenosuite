@@ -29,6 +29,7 @@ ui <- fluidPage(
       plotOutput('plots_new2'),
       plotOutput('plots_new'),
       actionButton("render", "Update Annotations"),
+      checkboxInput("export_h5ad", "Also export .h5ad (AnnData) file", value = FALSE),
       downloadButton(
         outputId = "phenomenalist_download",
         label = "Download Results",

@@ -1,4 +1,4 @@
-FROM rocker/shiny:4.4.0
+FROM --platform=linux/amd64 rocker/shiny:4.4.0
 
 # ── Layer 1: System dependencies ──────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libxml2-dev \
     libhdf5-dev \
+    patch \
     libgdal-dev \
     libgeos-dev \
     libproj-dev \
@@ -34,8 +35,9 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir \
     "numpy<2" "pandas<2" \
-    scipy tifffile scikit-learn matplotlib seaborn \
-    "rpy2==3.5.17"
+    scipy tifffile imagecodecs scikit-learn matplotlib seaborn \
+    "rpy2==3.5.17" \
+    anndata
 
 # ── Layer 3: Bioconductor packages ────────────────────────
 RUN R -e "install.packages('BiocManager', repos='https://cloud.r-project.org')"
@@ -71,6 +73,7 @@ RUN install2.r --error --skipinstalled \
     glue \
     gridExtra \
     harmony \
+    hdf5r \
     htmlwidgets \
     igraph \
     janitor \
@@ -104,6 +107,20 @@ RUN install2.r --error --skipinstalled \
     uwot \
     viridis \
     zip
+
+# ── Layer 5b (optional): Gemma 3 phenotyper ──────────────
+# Uncomment to enable gemma_phenotyper/production/ app.
+# Supports both the 1B text-only checkpoint and the 4B/12B/27B multimodal
+# checkpoints (incl. the *-qat-*-unquantized bases) — transformers>=4.50.0
+# is the floor where Gemma 3 (Gemma3ForConditionalGeneration) landed in a
+# stable release.
+# CPU-only torch (~230 MB) — remove --index-url line for GPU builds.
+# RUN pip install --no-cache-dir \
+#     "torch" --index-url https://download.pytorch.org/whl/cpu \
+#     "transformers>=4.50.0" \
+#     "peft>=0.10.0" \
+#     "accelerate>=0.28.0" \
+#     "bitsandbytes>=0.43.0"
 
 # ── Layer 5: GitHub packages ─────────────────────────────
 RUN R -e "remotes::install_github('igordot/phenomenalist', dependencies=FALSE)"

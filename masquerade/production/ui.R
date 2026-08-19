@@ -1,6 +1,7 @@
 library(shiny)
 library(shinyjs)
 library(glue)
+library(plotly)
 library(shinycssloaders)
 library(shinyWidgets)
 require(tidyverse)
@@ -26,6 +27,17 @@ ui <- fluidPage(
       border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.15);
     }
     hr { border-top: 1px solid #dee2e6; }
+
+    /* Compact colour-picker swatch */
+    .ch-color-picker { flex-shrink: 0; }
+    .ch-color-picker .form-group { margin-bottom: 0; }
+    .ch-color-picker .sp-replacer {
+      width: 22px; height: 22px;
+      border-radius: 4px; border: 1px solid #ccc;
+      padding: 1px; cursor: pointer;
+    }
+    .ch-color-picker .sp-preview { width: 18px; height: 18px; border-radius: 3px; }
+    .ch-color-picker .sp-dd { display: none; }
   "))),
 
   titlePanel(
@@ -33,7 +45,8 @@ ui <- fluidPage(
       tags$strong("Masquerade"),
       tags$small(style = "color:#888; margin-left:8px;",
                  "Cell-cluster mask builder")
-    )
+    ),
+    windowTitle = "Masquerade"
   ),
 
   sidebarLayout(
@@ -82,12 +95,26 @@ ui <- fluidPage(
                        icon = icon("file-download"),
                        class = "btn-block",
                        style = "margin-top:4px;")
-      )
+      ),
+
+      # ── Viewer channel controls (populated dynamically after processing) ──
+      uiOutput("viewer_controls")
     ),
 
     mainPanel(
       width = 9,
-      uiOutput("status_text") %>% withSpinner(color = "#0dc5c1")
+
+      # Pre-processing placeholder
+      uiOutput("status_text") %>% withSpinner(color = "#0dc5c1"),
+
+      # Composite image viewer (shown after processing)
+      conditionalPanel(
+        condition = "output.data_processed == true",
+        plotlyOutput("composite_viewer",
+                     height = "calc(100vh - 120px)",
+                     width  = "100%") %>%
+          withSpinner(color = "#0dc5c1")
+      )
     )
   )
 )

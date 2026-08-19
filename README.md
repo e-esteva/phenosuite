@@ -202,6 +202,72 @@ Both steps are automatic and run after the per-cluster annotation finishes — t
 
 ---
 
+## Gemma mIF Phenotyper
+
+The **Gemma mIF Phenotyper** (`gemma_phenotyper/production`) is the local-model counterpart to Automated Phenotyping: same idea — an LLM assigns cell-type labels per cluster — but backed by a Gemma model instead of GPT. It isn't tied to a specific Gemma generation (fine-tuning has been run against Gemma 3 checkpoints; Ollama can serve whatever's currently pulled, including newer generations), so it's referred to here simply as "Gemma," not "Gemma 3."
+
+### Model sources
+
+| Source | What it needs | Fine-tuned? |
+|---|---|---|
+| **Upload model zip** | A merged checkpoint or LoRA adapter, zipped, uploaded through the browser (capped by `shiny.maxRequestSize`, 4 GB) | Yes |
+| **Server directory path** | Same checkpoint/adapter, already sitting in a directory on the server — the practical option for anything bigger than a few GB | Yes |
+| **Ollama server (zero-shot)** | A running Ollama server with the model already pulled; no fine-tuning, no weights loaded into this app at all | No |
+
+The two fine-tuned sources run inference in-process via `infer.py` (`transformers`/`PEFT`, invoked through `system2()`). The Ollama source never touches Python — the R side calls Ollama's HTTP API directly.
+
+### Prompts
+
+The two backends use different prompt shapes, because they're solving different problems: a fine-tuned checkpoint already learned your ontology during training, while an off-the-shelf Ollama model has to be told everything in the prompt itself.
+
+**Fine-tuned checkpoint (merged / LoRA adapter).** Every marker in the panel is sent as a `marker=value` pair alongside the exact text from the **Cell type ontology** box, and the model is asked to return strict JSON:
+
+> *System: "You are a cellular phenotyping assistant for mIF data. Return JSON only."*
+> *User: "Phenotype this cell cluster.\nCluster: {cluster_id} (n={n_cells} cells)\nMean markers ({assay}): {marker=value, marker=value, ...}\nOntology: {ontology_text}"*
+
+**Ollama (zero-shot).** No ontology table — instead only the most distinctive markers for that cluster are shown (top/bottom 10% by value, highest-to-lowest), plus the tissue type if one was entered:
+
+> *System: "You are an expert immunologist."*
+> *User: "What cell type is described by {marker:value, marker:value, ...}? [This is a {tissue}.] Respond with ONLY JSON in the form {"cell_type": "<3-word answer>", "confidence": <0-1>} — no markdown, no explanation."*
+
+After every cluster (or cell) is labeled, the Ollama path runs one more harmonisation call — the same idea as Automated Phenotyping's harmonisation pass — collapsing near-duplicate labels (`Treg cell` / `T regulatory` / `Regulatory T cell`) into a single canonical spelling before results are written out. The fine-tuned paths skip this step since their ontology already enforces a controlled vocabulary.
+
+### Running Ollama
+
+The app runs inside Docker, so `localhost` inside the container refers to the container itself, not your host machine — point the **Ollama host** field (or the `OLLAMA_HOST` env var) at wherever Ollama actually listens.
+
+**1. Install:**
+
+```bash
+# macOS / Linux
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+Or download an installer for macOS / Windows / Linux from [ollama.com/download](https://ollama.com/download).
+
+**2. Serve** (the desktop app does this automatically in the background on macOS/Windows — only needed if you installed the CLI directly, e.g. on a headless Linux box):
+
+```bash
+ollama serve
+```
+
+**3. Pull a model:**
+
+```bash
+ollama pull gemma3:12b-it-qat
+```
+
+**4. Point the app at it** — Step 2 → "Ollama server (zero-shot)":
+
+| Field | Value |
+|---|---|
+| Ollama host | `http://host.docker.internal:11434` if Ollama runs on the Docker host (Mac/Windows Docker Desktop resolves this automatically; on native Linux Docker it needs `extra_hosts: ["host.docker.internal:host-gateway"]` in `docker-compose.yml`). Plain `http://localhost:11434` only works if Ollama is reachable on the container's own network namespace. |
+| Model tag | Whatever you pulled, e.g. `gemma3:12b-it-qat` |
+
+Browse available Gemma sizes and variants — including newer generations as Google releases them — at **[ai.google.dev/gemma](https://ai.google.dev/gemma)**.
+
+---
+
 ## Provenance Sidecar (Reproducibility)
 
 Every PhenoSuite app bundles a **provenance sidecar** into its output ZIP. The sidecar is a pair of files — `provenance.json` and `replay.R` — written to the session temp dir alongside the normal analysis outputs, so they travel with the download automatically. Together they capture enough information to audit, re-run, or cite an analysis after the fact without needing access to the original Shiny session.

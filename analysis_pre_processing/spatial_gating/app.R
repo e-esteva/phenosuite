@@ -594,12 +594,24 @@ server <- function(input, output, session) {
     # ---- Build plot ----
     p <- ggplot(df_plot, pt_aes)
 
-    # Fast rasterized rendering via scattermore
-    p <- p + geom_scattermore(
-      pointsize = 1.5,
-      alpha     = 0.6,
-      pixels    = c(1200, 800)
-    )
+    # Fast rasterized rendering via scattermore.
+    # Explicit color needed when no color aes is mapped (use_color_scale ==
+    # FALSE): geom_scattermore defaults to black, which is invisible against
+    # the dark (#111111) panel background below.
+    if (use_color_scale) {
+      p <- p + geom_scattermore(
+        pointsize = 1.5,
+        alpha     = 0.6,
+        pixels    = c(1200, 800)
+      )
+    } else {
+      p <- p + geom_scattermore(
+        pointsize = 1.5,
+        alpha     = 0.6,
+        pixels    = c(1200, 800),
+        color     = "#00e5ff"
+      )
+    }
 
     if (use_color_scale) p <- p + color_scale
 

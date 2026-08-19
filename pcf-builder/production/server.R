@@ -170,10 +170,13 @@ server=shinyServer( function(input, output, session) {
   observe({
     samples = new_group_names()
     updateSelectInput(inputId = 'ref_selection',choices = samples,selected = "")
-    
+
     celltypes = mydata()
     updateSelectInput(inputId = 'celltype_to_analyze',choices = celltypes,selected = "")
-    
+
+    group_names = unique(samples)
+    updateSelectizeInput(inputId = 'sample_order', choices = group_names, selected = group_names)
+
   })
   
   tempdir=file.path(tempdir(), as.integer(Sys.time()))
@@ -183,41 +186,67 @@ server=shinyServer( function(input, output, session) {
   tracker <- ProvenanceTracker$new("pcf_builder", session, tempdir0)
   print(tempdir0)
 
-  output$plot=renderPlot({
-    
+  # Builds the current violin plot from live inputs — no side effects (no
+  # saving, no provenance tracking). Shared by the live preview and the
+  # confirm-triggered save, so the saved plot always matches what's shown.
+  build_pcf_plot <- reactive({
+    req(mydata0(), input$celltype_to_analyze, input$ref_selection)
+
     samples=mydata1()
     groups=new_group_names()
-    
-    data=mydata0()
-    print(head(data))
-    
+    global_pcf=mydata0()
     ref = input$ref_selection
     celltype=input$celltype_to_analyze
-    print(ref)
-    print(celltype)
-    
-    if(!is.null(data) & input$confirm_pcf > 0){
-      tracker$capture_parameters(input)
-      tracker$analysis_started()
-      global_pcf=data
 
-      for(i in seq(length(groups))){
-        group.tmp=groups[i]
-        global_pcf$Sample=gsub(samples[i],group.tmp,as.character(global_pcf$Sample))
-      }
-      print(table(global_pcf$Sample))
-      p=ggviolin(global_pcf,x='Sample',y=celltype,color = 'Sample',add = 'boxplot')+geom_hline(yintercept = mean(global_pcf[,match(celltype,names(global_pcf))][global_pcf$Sample==ref]))+theme(legend.position = "none")+xlab('')+ylab('norm PCF')+ggtitle(glue('{celltype} Interactions | all versus {ref}'))+stat_compare_means(ref.group = ref)+coord_flip()+stat_summary(fun = "mean",geom = "point",color = "red")
-      print(p)
-
-      if(input$confirm_pcf > 0){
-        ggsave(glue('{tempdir0}/${input$run_label}.pdf'),p)
-      }
-      tracker$analysis_completed()
+    for(i in seq(length(groups))){
+      group.tmp=groups[i]
+      global_pcf$Sample=gsub(samples[i],group.tmp,as.character(global_pcf$Sample))
     }
-    
-    
-    
+
+    # User-controlled plot order, top-to-bottom. ggviolin()+coord_flip()
+    # renders factor level 1 at the bottom of the flipped axis, so the
+    # levels must be set in *reverse* of the user's chosen top-to-bottom
+    # order for the on-screen order to match what they picked.
+    present_groups = unique(global_pcf$Sample)
+    order_ = input$sample_order
+    if(!is.null(order_) && setequal(order_, present_groups)){
+      global_pcf$Sample = factor(global_pcf$Sample, levels = rev(order_))
+    }else{
+      global_pcf$Sample = factor(global_pcf$Sample, levels = rev(sort(present_groups)))
+    }
+
+    # Reserve headroom on the (flipped) value axis and disable clipping —
+    # stat_compare_means() places its p-value labels past the data range,
+    # which otherwise get cut off at the panel edge after coord_flip().
+    ggviolin(global_pcf,x='Sample',y=celltype,color = 'Sample',add = 'boxplot')+geom_hline(yintercept = mean(global_pcf[,match(celltype,names(global_pcf))][global_pcf$Sample==ref]))+theme(legend.position = "none")+xlab('')+ylab('norm PCF')+ggtitle(glue('{celltype} Interactions | all versus {ref}'))+stat_compare_means(ref.group = ref)+scale_y_continuous(expand = expansion(mult = c(0.05, 0.3)))+coord_flip(clip = "off")+stat_summary(fun = "mean",geom = "point",color = "red")
   })
+
+  # Live preview — recomputes whenever celltype/reference/order/groups
+  # change, but stays blank until Confirm has been clicked at least once
+  # (matches prior behaviour). Does not save anything by itself.
+  output$plot=renderPlot({
+    req(input$confirm_pcf > 0)
+    build_pcf_plot()
+  })
+
+  # Explicit save, once per Confirm click — lets the user step through
+  # multiple celltypes (select celltype, Confirm, select another, Confirm,
+  # ...) and accumulate one PDF per celltype rather than overwriting a
+  # single file, so "Download Results" later zips up all of them.
+  observeEvent(input$confirm_pcf, {
+    req(mydata0())
+    tracker$capture_parameters(input)
+    tracker$analysis_started()
+
+    p        <- build_pcf_plot()
+    celltype <- input$celltype_to_analyze
+    safe_ct  <- gsub("[^A-Za-z0-9]+", "_", celltype)
+    # Wider than the ggsave default (7x7) — the previous size left the
+    # stat_compare_means() p-value labels truncated at the right edge.
+    ggsave(glue('{tempdir0}/{input$run_label}-{safe_ct}.pdf'), p, width = 10, height = 7)
+
+    tracker$analysis_completed()
+  }, ignoreInit = TRUE)
   
   output$pcf_download <- downloadHandler(
     filename = function(){

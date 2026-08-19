@@ -78,3 +78,15 @@ analysis_engine_multi/
 dashboard/
 masquerade_v0/
 pcf/
+
+# local tooling / artefacts
+.claude/
+cluster_mem.log
+__pycache__/
+*.pyc
+
+# local tooling / artefacts
+.claude/
+cluster_mem.log
+__pycache__/
+*.pyc

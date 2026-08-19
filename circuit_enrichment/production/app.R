@@ -309,6 +309,36 @@ server <- function(input, output, session) {
       labs(title = "Cell-type composition", x = NULL, y = "Count", fill = NULL)
   })
 
+  # Export-time versions of the two Data summary plots above, for the download
+  # handler. Built from rv$xy/rv$celltypes (the snapshot frozen at Run) rather
+  # than extract_data() directly, so they match whatever was actually analysed
+  # even if the file/column pickers were touched again afterwards — and so the
+  # on-screen versions above can keep working as a live pre-Run preview.
+  spatial_celltypes_gg <- reactive({
+    if (is.null(rv$xy) || is.null(rv$celltypes)) return(NULL)
+    df <- data.frame(x = rv$xy[,1], y = rv$xy[,2], celltype = rv$celltypes)
+    ggplot(df, aes(x, y, color = celltype)) +
+      geom_point(size = 0.3, alpha = 0.6) +
+      coord_equal() + theme_minimal() +
+      theme(legend.position = "bottom", legend.text = element_text(size = 7)) +
+      guides(color = guide_legend(override.aes = list(size = 2), ncol = 3)) +
+      labs(title = "Cell types in tissue space", color = NULL)
+  })
+
+  celltype_bar_gg <- reactive({
+    if (is.null(rv$celltypes)) return(NULL)
+    df <- as.data.frame(table(celltype = rv$celltypes)); names(df) <- c("celltype", "count")
+    df <- df[order(-df$count), ]
+    df$celltype   <- factor(df$celltype, levels = df$celltype)
+    df$in_circuit <- df$celltype %in% input$circuit_members
+    ggplot(df, aes(celltype, count, fill = in_circuit)) +
+      geom_col() +
+      scale_fill_manual(values = c("FALSE" = "#bdc3c7", "TRUE" = "#2c3e50"),
+                        labels = c("Other", "In circuit")) +
+      coord_flip() + theme_minimal() +
+      labs(title = "Cell-type composition", x = NULL, y = "Count", fill = NULL)
+  })
+
   # ── Main analysis ────────────────────────────────────────────────────────
   observeEvent(input$run, {
     req(input$ct_col, input$circuit_members, length(input$circuit_members) >= 3)
@@ -383,16 +413,22 @@ server <- function(input, output, session) {
     )
   })
 
-  output$score_histogram <- renderPlot({
-    req(rv$scores)
+  score_histogram_gg <- reactive({
+    if (is.null(rv$scores)) return(NULL)
     ggplot(data.frame(s = rv$scores[rv$scores > 0]), aes(s)) +
       geom_histogram(bins = 60, fill = "#2c3e50", color = "white", linewidth = 0.2) +
       theme_minimal() +
       labs(title = "Score distribution (non-zero)", x = "Score", y = "Count")
   })
 
-  output$spatial_scores <- renderPlot({
-    req(rv$scores, rv$xy)
+  output$score_histogram <- renderPlot({
+    p <- score_histogram_gg()
+    req(p)
+    p
+  })
+
+  spatial_scores_gg <- reactive({
+    if (is.null(rv$scores) || is.null(rv$xy)) return(NULL)
     df <- data.frame(x = rv$xy[,1], y = rv$xy[,2], score = rv$scores)
     ggplot(df, aes(x, y, color = score)) +
       geom_point(size = 0.3) +
@@ -402,9 +438,15 @@ server <- function(input, output, session) {
            color = "Score")
   })
 
+  output$spatial_scores <- renderPlot({
+    p <- spatial_scores_gg()
+    req(p)
+    p
+  })
+
   # ── Threshold sweep ──────────────────────────────────────────────────────
-  output$sweep_plot <- renderPlot({
-    req(rv$sweep)
+  sweep_plot_gg <- reactive({
+    if (is.null(rv$sweep)) return(NULL)
     df <- rv$sweep
     p1 <- ggplot(df, aes(threshold, n_positive)) +
       geom_line(linewidth = 1, color = "#2c3e50") +
@@ -419,6 +461,12 @@ server <- function(input, output, session) {
     p1 | p2
   })
 
+  output$sweep_plot <- renderPlot({
+    p <- sweep_plot_gg()
+    req(p)
+    p
+  })
+
   output$thresh_slider_ui <- renderUI({
     req(rv$sweep)
     rng <- range(rv$sweep$threshold)
@@ -427,8 +475,8 @@ server <- function(input, output, session) {
       value = median(rv$sweep$threshold), step = 0.005)
   })
 
-  output$spatial_threshold <- renderPlot({
-    req(rv$scores, rv$xy, input$active_thresh)
+  spatial_threshold_gg <- reactive({
+    if (is.null(rv$scores) || is.null(rv$xy) || is.null(input$active_thresh)) return(NULL)
     df          <- data.frame(x = rv$xy[,1], y = rv$xy[,2], score = rv$scores)
     df$positive <- df$score >= input$active_thresh
     n_pos       <- sum(df$positive)
@@ -444,9 +492,16 @@ server <- function(input, output, session) {
            color = NULL)
   })
 
+  output$spatial_threshold <- renderPlot({
+    p <- spatial_threshold_gg()
+    req(p)
+    p
+  })
+
   # ── Circuit domains ──────────────────────────────────────────────────────
-  output$domain_plot <- renderPlot({
-    req(rv$scores, rv$xy, rv$celltypes, input$active_thresh, input$circuit_members)
+  domain_plot_gg <- reactive({
+    if (is.null(rv$scores) || is.null(rv$xy) || is.null(rv$celltypes) ||
+        is.null(input$active_thresh) || is.null(input$circuit_members)) return(NULL)
     df          <- data.frame(x = rv$xy[,1], y = rv$xy[,2],
                               celltype = rv$celltypes, score = rv$scores)
     df$positive <- df$score >= input$active_thresh
@@ -465,6 +520,12 @@ server <- function(input, output, session) {
       labs(title    = paste0("Circuit domains (threshold = ", input$active_thresh, ")"),
            subtitle = paste("Circuit:", paste(input$circuit_members, collapse = " + ")),
            color    = NULL)
+  })
+
+  output$domain_plot <- renderPlot({
+    p <- domain_plot_gg()
+    req(p)
+    p
   })
 
   output$domain_summary <- renderPrint({
@@ -521,9 +582,29 @@ server <- function(input, output, session) {
         frac_positive = mean(rv$scores >= input$active_thresh),
         z             = rv$ztest$z,
         p             = rv$ztest$p_value,
+        obs_mean      = rv$ztest$obs_mean,
+        null_mean     = rv$ztest$null_mean,
+        null_sd       = rv$ztest$null_sd,
         input_format  = if (spe_loaded()) "SPE" else "CSV",
         engine        = "circuit_engine.py via reticulate"),
         pretty = TRUE, auto_unbox = TRUE), jp)
+
+      # ── Plots — one PNG per visualization across the Data Summary, Circuit
+      # Scores, Threshold Optimization, and Circuit Domains tabs ──
+      plot_specs <- list(
+        list(name = "spatial_celltypes.png", plot = spatial_celltypes_gg(), w = 8,  h = 8),
+        list(name = "celltype_composition.png", plot = celltype_bar_gg(),  w = 8,  h = 6),
+        list(name = "score_histogram.png",   plot = score_histogram_gg(),   w = 8,  h = 5),
+        list(name = "spatial_scores.png",    plot = spatial_scores_gg(),    w = 8,  h = 8),
+        list(name = "threshold_sweep.png",   plot = sweep_plot_gg(),        w = 10, h = 5),
+        list(name = "spatial_threshold.png", plot = spatial_threshold_gg(), w = 8,  h = 8),
+        list(name = "circuit_domains.png",   plot = domain_plot_gg(),       w = 8,  h = 8)
+      )
+      for (spec in plot_specs) {
+        if (!is.null(spec$plot))
+          ggsave(file.path(tempdir0, spec$name), plot = spec$plot,
+                 width = spec$w, height = spec$h, dpi = 150)
+      }
 
       tracker$output_dir <- tempdir0
       tracker$analysis_completed()

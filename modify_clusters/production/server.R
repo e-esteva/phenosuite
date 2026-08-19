@@ -15,6 +15,20 @@ source('/srv/shiny-server/Phenoptics-Menu/utils/RunPhenomenalist-shiny/phenomena
 source('/srv/shiny-server/Phenoptics-Menu/utils/heatmap-by-cluster.R')
 source('/srv/shiny-server/phenomenalist/utils/provenance.R')
 
+# Categorical columns available for cluster/annotation renaming: a
+# character/factor column qualifies if it either varies across cells (e.g.
+# gemma_cell_type, gemma_cell_type_marked) or matches the legacy naming
+# pattern this app used to key off of (e.g. gemma_cluster_col, which is a
+# provenance column and stays constant across cells but should still show
+# up, same as it did before). Numeric columns (coords, confidence scores,
+# etc.) are always excluded since they aren't label-like.
+get_annotation_columns <- function(meta) {
+	is_categorical <- vapply(meta, function(col) is.character(col) || is.factor(col), logical(1))
+	varies_by_cell <- vapply(meta, function(col) length(unique(col[!is.na(col)])) > 1, logical(1))
+	legacy_name <- grepl('cluster|classification|annotation|celltype', names(meta))
+	names(meta)[is_categorical & (varies_by_cell | legacy_name)]
+}
+
 server=shinyServer( function(input, output, session) {
   
   # return spe object:
@@ -42,9 +56,9 @@ server=shinyServer( function(input, output, session) {
     if(!is.null(inFile)){    
     	spe = readRDS(inFile$datapath)
         if('Seurat' %in% class(spe)){
-		return(str_subset(names(spe@meta.data),'cluster|classification|annotation|celltype'))
+		return(get_annotation_columns(spe@meta.data))
 	}else{
-		return(str_subset(names(colData(spe)),'cluster|classification|annotation|celltype'))
+		return(get_annotation_columns(as.data.frame(colData(spe))))
 	}
     	
     }

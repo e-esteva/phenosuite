@@ -36,6 +36,15 @@ def _apply_crop(arr_2d, bounds, adjust):
     return arr_2d[y_min:y_max, x_min:x_max]
 
 
+def _disk_structure(radius):
+    """Filled circular structuring element of the given pixel radius."""
+    y, x = np.ogrid[-radius:radius + 1, -radius:radius + 1]
+    return x**2 + y**2 <= radius**2
+
+
+MASK_RADIUS = 4  # pixel radius of each per-cell mask circle
+
+
 # ── public API ───────────────────────────────────────────────────────
 
 def PreProcessImage(image_source, spatial_metadata, adjust_coords=True):
@@ -99,7 +108,7 @@ def get_mask_channels(
         cy_safe = np.clip(cy, 0, mask.shape[0] - 1)
         cx_safe = np.clip(cx, 0, mask.shape[1] - 1)
         mask[cy_safe, cx_safe] = True
-        mask = ndimage.binary_dilation(mask, iterations=1)
+        mask = ndimage.binary_dilation(mask, structure=_disk_structure(MASK_RADIUS))
 
         # Apply mask to the summed image
         masked = np.where(mask, summed_image, 0).astype(np.float64)

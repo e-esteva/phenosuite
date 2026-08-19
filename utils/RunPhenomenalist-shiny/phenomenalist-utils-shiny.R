@@ -704,9 +704,9 @@ cluster.mod=function (x, method = c("leiden"), resolution = 1, n_neighbors = 50,
             readr::write_csv(cluster_summary, glue("{clusters_dir}/{clusters_label}-summary.csv"))
             plot_heatmap(x, group_by = clusters_label, 
                          out_dir = clusters_dir)
-            plot_spatial(x, color_by = clusters_label, 
+            plot_spatial.mod(x, color_by = clusters_label,
                          out_dir = clusters_dir)
-            plot_dr(x, dr = "UMAP", color_by = clusters_label, 
+            plot_dr.mod(x, dr = "UMAP", color_by = clusters_label,
                     out_dir = clusters_dir)
           }
           

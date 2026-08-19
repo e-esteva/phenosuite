@@ -25,14 +25,27 @@ dashboardPage(
         fluidRow(
           box(
             title = "Upload CSV File",
-            width = 12,
+            width = 6,
             fileInput("csv_file", "Choose CSV File",
-                      accept = c("text/csv", 
-                                 "text/comma-separated-values,text/plain", 
+                      accept = c("text/csv",
+                                 "text/comma-separated-values,text/plain",
                                  ".csv",
                                  ".csv.gz",
                                  "application/gzip")),
-	      uiOutput("previous_gates_detected")
+            uiOutput("previous_gates_detected")
+          ),
+          box(
+            title = "Load Previous Gating Strategy (optional)",
+            width = 6,
+            p("Upload a ", code("gate_metadata.json"), " from a previous session to re-apply those gates to this dataset.
+               Gates are applied where the required marker columns exist; incompatible gates are skipped gracefully."),
+            fileInput("gate_json_file", "Upload gate_metadata.json:",
+                      accept = c("application/json", ".json")),
+            uiOutput("json_strategy_preview"),
+            br(),
+            actionButton("apply_json_strategy", "Apply Gating Strategy",
+                         class = "btn-success", icon = icon("magic")),
+            helpText("Upload your data file first, then apply the strategy.")
           )
         ),
         fluidRow(

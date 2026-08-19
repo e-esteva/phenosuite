@@ -1,0 +1,11 @@
+# Core viewer dependencies
+napari[all]>=0.4.19
+tifffile>=2023.1.23
+numpy<2
+
+# Optional — required only for --lazy flag (large file dask streaming)
+zarr>=2.18
+dask[array]>=2024.1
+
+# Optional — required only for --metadata CSV overlay
+pandas>=1.5

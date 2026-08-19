@@ -90,7 +90,10 @@ RunPhenomenalist.shiny=function(segmentation_file,label,failed.markers=NULL,nucl
       }
       
       res_found=do.call('rbind',strsplit(cluster_cols,'[cluster_leiden_res]'))
-      prepare_mask_inputs(spe=spe,out_dir = out_dir,res = max(as.numeric(res_found[,19])),mask.only = mask.only,label=label)
+      all_res=unique(as.numeric(res_found[,19]))
+      for(res_val in all_res){
+        prepare_mask_inputs(spe=spe,out_dir = out_dir,res = res_val,mask.only = mask.only,label=label)
+      }
       
     }else{
       incProgress(1/6, detail = 'Generating Phenomenalist object')
@@ -144,7 +147,10 @@ RunPhenomenalist.shiny=function(segmentation_file,label,failed.markers=NULL,nucl
       }
       
       res_found=do.call('rbind',strsplit(cluster_cols,'[cluster_leiden_res]'))
-      prepare_mask_inputs(spe=spe,out_dir = out_dir,res = max(as.numeric(res_found[,19])),mask.only = mask.only,label=label)
+      all_res=unique(as.numeric(res_found[,19]))
+      for(res_val in all_res){
+        prepare_mask_inputs(spe=spe,out_dir = out_dir,res = res_val,mask.only = mask.only,label=label)
+      }
       
     }
     incProgress(1/6, detail = 'Done')

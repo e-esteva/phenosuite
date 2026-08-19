@@ -216,25 +216,40 @@ shinyServer(function(input, output, session) {
                 selected = original_cols[min(2, length(original_cols))])
   })
   output$previous_gates_detected <- renderUI({
-  	req(rv$detected_gates)
-  	if (length(rv$detected_gates) > 0) {
-    		box(
-      			title = "Previous Gates Detected!",
-      			status = "warning",
-      			solidHeader = TRUE,
-      			width = 12,
-      			p(sprintf("Found %d gate columns in your data.", length(rv$detected_gates))),
-      			p(strong("To restore your previous gating session with exact thresholds:")),
-      			fileInput("gate_metadata_file", 
-                	"Upload gate_metadata.json file:",
-                	accept = c("application/json", ".json")),
-      			actionButton("restore_gates", 
-                   	"Restore Gates from Metadata", 
-                   	class = "btn-success"),
-      			hr(),
-      			p(em("Note: Without the metadata file, gate definitions (thresholds, axes) cannot be restored."))
-    		)
-  	}
+    req(rv$detected_gates)
+    if (length(rv$detected_gates) > 0) {
+      div(
+        class = "alert alert-warning",
+        strong(sprintf("Note: %d gate column(s) detected in this file.", length(rv$detected_gates))),
+        " To re-apply gates with their original thresholds, upload a ",
+        code("gate_metadata.json"), " using the panel on the right."
+      )
+    }
+  })
+
+  # Preview the JSON strategy once a file is chosen
+  output$json_strategy_preview <- renderUI({
+    req(input$gate_json_file)
+    tryCatch({
+      meta <- jsonlite::fromJSON(input$gate_json_file$datapath, simplifyVector = FALSE)
+      needed <- unique(unlist(lapply(meta, function(g) c(g$x_var, g$y_var))))
+      transforms <- unique(unlist(lapply(meta, function(g) {
+        tx <- g$x_transform %||% "none"
+        ty <- g$y_transform %||% "none"
+        c(if (tx != "none") paste0(tx, "(", g$x_var, ")"),
+          if (ty != "none") paste0(ty, "(", g$y_var, ")"))
+      })))
+      div(
+        style = "background:#f0f8ff; padding:10px; border-radius:4px; margin-top:4px; font-size:12px;",
+        tags$b(paste0(length(meta), " gate(s) in strategy")), br(),
+        paste0("Gates: ", paste(names(meta), collapse = ", ")), br(),
+        paste0("Required columns: ", paste(needed, collapse = ", ")),
+        if (length(transforms) > 0)
+          tagList(br(), paste0("Transformations: ", paste(transforms, collapse = ", ")))
+      )
+    }, error = function(e) {
+      div(class = "alert alert-danger", "Could not parse JSON: ", e$message)
+    })
   })
   # Store brush coordinates
   observe({
@@ -270,102 +285,144 @@ shinyServer(function(input, output, session) {
     }
   }, ignoreInit = TRUE)
   
-  #observeEvent(input$restore_gates, {
-  #	req(rv$original_data, input$gate_metadata_file)
-  #
-  #	tryCatch({
-   # 		# Read JSON metadata
-   # 		metadata <- jsonlite::fromJSON(input$gate_metadata_file$datapath)
-    
-    #		# Restore gate tree directly
-    #		rv$gate_tree <- metadata
-    #
-    #		# Rebuild gate data cache
-    #		for (gate_name in names(metadata)) {
-     # 			gate_info <- metadata[[gate_name]]
-      #
-      #			# Get cells that passed this gate
-      #			passing_rows <- which(rv$full_data_with_gates[[gate_name]] == 1)
-      #			rv$gate_data_cache[[gate_name]] <- rv$original_data[passing_rows, ]
-      #
-      #			# Restore color
-      #			rv$gate_number <- rv$gate_number + 1
-      #			color_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00")
-      #			rv$gate_colors[gate_name] <- color_palette[(rv$gate_number - 1) %% 5 + 1]
-      #
-      #			rv$visible_gates <- c(rv$visible_gates, gate_name)
-    	#	}
-    #
-    #		showNotification(sprintf("Restored %d gates with exact thresholds!", 
-     #                       length(metadata)), type = "message")
-    #
-  #	}, error = function(e) {
-   # 	showNotification(paste("Error restoring gates:", e$message), type = "error")
-  #	})
-  #})
-  observeEvent(input$restore_gates, {
-  	req(rv$original_data, input$gate_metadata_file)
-  
-  	tryCatch({
-    	# Read JSON metadata
-    	metadata <- jsonlite::fromJSON(input$gate_metadata_file$datapath)
-    
-    	# Restore gate tree directly
-    	rv$gate_tree <- metadata
-    
-    	# Reset gate data cache with root
-    	rv$gate_data_cache <- list(root = rv$original_data)
-    
-    	# Rebuild gates hierarchically by re-applying thresholds
-    	for (gate_name in names(metadata)) {
-      		gate_info <- metadata[[gate_name]]
-      
-      		# Get parent data
-      		parent_id <- gate_info$parent
-      		if (!(parent_id %in% names(rv$gate_data_cache))) {
-        		stop(paste("Parent gate", parent_id, "not found for", gate_name))
-      		}
-      		parent_data <- rv$gate_data_cache[[parent_id]]
-      
-      		# RE-APPLY the gate using saved thresholds
-      		x_vals <- parent_data[[gate_info$x_var]]
-      		y_vals <- parent_data[[gate_info$y_var]]
-      
-      		inside <- x_vals >= gate_info$threshold_xmin & 
-                x_vals <= gate_info$threshold_xmax &
-                y_vals >= gate_info$threshold_ymin & 
-                y_vals <= gate_info$threshold_ymax
-      
-      		# Cache the gated data
-      		gated_data <- parent_data[inside, ]
-      		rv$gate_data_cache[[gate_name]] <- gated_data
-      
-      		# Update full dataset gate column
-      		if (!(gate_name %in% names(rv$full_data_with_gates))) {
-        		rv$full_data_with_gates[[gate_name]] <- 0
-      		}
-      		rows_that_pass <- rownames(parent_data)[inside]
-      		rv$full_data_with_gates[rows_that_pass, gate_name] <- 1
-      
-      		# Restore color
-      		rv$gate_number <- rv$gate_number + 1
-      		color_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00")
-      		rv$gate_colors[gate_name] <- color_palette[(rv$gate_number - 1) %% 5 + 1]
-      
-      		rv$visible_gates <- c(rv$visible_gates, gate_name)
-       }
-    
-       # Set current view to root after restoration
-       rv$current_gate_id <- "root"
-       rv$current_data <- rv$original_data
-    
-       showNotification(sprintf("Restored %d gates with exact thresholds!", 
-                        length(metadata)), type = "message")
-    
-  	}, error = function(e) {
-    	showNotification(paste("Error restoring gates:", e$message), type = "error")
-  	})
-   })
+  observeEvent(input$apply_json_strategy, {
+    req(rv$original_data, input$gate_json_file)
+
+    tryCatch({
+      metadata <- jsonlite::fromJSON(input$gate_json_file$datapath, simplifyVector = FALSE)
+
+      # Reset all gate state
+      rv$gate_tree         <- list()
+      rv$gate_number       <- 0
+      rv$gate_data_cache   <- list(root = rv$original_data)
+      rv$gate_colors       <- c()
+      rv$visible_gates     <- c()
+      rv$full_data_with_gates <- rv$original_data
+      rv$current_gate_id   <- "root"
+      rv$current_data      <- rv$original_data
+      rv$saved_brush       <- NULL
+      session$resetBrush("plot_brush")
+
+      color_palette <- c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+                         "#FFFF33","#A65628","#F781BF","#999999","#66C2A5",
+                         "#FC8D62","#8DA0CB","#E78AC3","#A6D854","#FFD92F",
+                         "#E5C494","#B3B3B3","#1B9E77","#D95F02","#7570B3")
+
+      applied      <- character(0)
+      skipped      <- character(0)
+      skip_reasons <- list()
+
+      # Topological walk: keep iterating until no progress is made.
+      # A gate is ready when its parent is "root" or already in `applied`.
+      # A gate is abandoned when its parent is in `skipped`.
+      remaining <- names(metadata)
+
+      repeat {
+        progress_made <- FALSE
+
+        still_remaining <- character(0)
+
+        for (gate_name in remaining) {
+          gate_info <- metadata[[gate_name]]
+          parent_id <- gate_info$parent %||% "root"
+
+          # Parent skipped → this gate can never be applied
+          if (parent_id %in% skipped) {
+            skipped <- c(skipped, gate_name)
+            skip_reasons[[gate_name]] <- paste0("parent gate '", parent_id, "' was not applied")
+            progress_made <- TRUE
+            next
+          }
+
+          # Parent not yet processed → defer
+          if (parent_id != "root" && !(parent_id %in% applied)) {
+            still_remaining <- c(still_remaining, gate_name)
+            next
+          }
+
+          # Check marker columns exist
+          x_var <- gate_info$x_var
+          y_var <- gate_info$y_var
+          if (!(x_var %in% names(rv$original_data))) {
+            skipped <- c(skipped, gate_name)
+            skip_reasons[[gate_name]] <- paste0("column '", x_var, "' not found")
+            progress_made <- TRUE
+            next
+          }
+          if (!(y_var %in% names(rv$original_data))) {
+            skipped <- c(skipped, gate_name)
+            skip_reasons[[gate_name]] <- paste0("column '", y_var, "' not found")
+            progress_made <- TRUE
+            next
+          }
+
+          # Apply transformation then threshold (thresholds are in transformed space)
+          parent_data <- rv$gate_data_cache[[parent_id]]
+          x_transform <- gate_info$x_transform %||% "none"
+          y_transform <- gate_info$y_transform %||% "none"
+          x_vals <- apply_transformation(parent_data[[x_var]], x_transform)
+          y_vals <- apply_transformation(parent_data[[y_var]], y_transform)
+
+          inside <- x_vals >= gate_info$threshold_xmin &
+                    x_vals <= gate_info$threshold_xmax &
+                    y_vals >= gate_info$threshold_ymin &
+                    y_vals <= gate_info$threshold_ymax
+
+          gated_data <- parent_data[inside, ]
+          rv$gate_data_cache[[gate_name]] <- gated_data
+
+          col_name <- make.names(gate_name)
+          if (!(col_name %in% names(rv$full_data_with_gates)))
+            rv$full_data_with_gates[[col_name]] <- 0
+          rv$full_data_with_gates[rownames(parent_data)[inside], col_name] <- 1
+
+          rv$gate_number <- rv$gate_number + 1
+          rv$gate_colors[gate_name] <- color_palette[(rv$gate_number - 1) %% length(color_palette) + 1]
+          rv$visible_gates <- c(rv$visible_gates, gate_name)
+
+          restored <- gate_info
+          restored$n_before <- nrow(parent_data)
+          restored$n_after  <- sum(inside)
+          restored$plot     <- NULL
+          rv$gate_tree[[gate_name]] <- restored
+
+          applied       <- c(applied, gate_name)
+          progress_made <- TRUE
+        }
+
+        remaining <- still_remaining
+        if (!progress_made || length(remaining) == 0) break
+      }
+
+      # Any gates still in `remaining` have a circular/unknown parent
+      for (gate_name in remaining) {
+        skipped <- c(skipped, gate_name)
+        skip_reasons[[gate_name]] <- "could not resolve parent gate"
+      }
+
+      # Report
+      if (length(applied) > 0) {
+        ok_msg <- paste0(length(applied), " gate(s) applied: ", paste(applied, collapse = ", "))
+        skip_msg <- if (length(skipped) > 0) {
+          detail <- paste(sapply(skipped, function(g)
+            paste0(g, " [", skip_reasons[[g]], "]")), collapse = "; ")
+          paste0("\n", length(skipped), " skipped: ", detail)
+        } else ""
+        showNotification(paste0(ok_msg, skip_msg), type = "message", duration = 10)
+      } else {
+        showNotification(
+          "No gates could be applied. Check that marker column names match those in the JSON.",
+          type = "warning", duration = 10)
+      }
+
+      updateTextInput(session, "gate_name",
+                      value = paste0("Gate_", length(rv$gate_tree) + 1))
+
+    }, error = function(e) {
+      showNotification(paste("Error loading gating strategy:", e$message),
+                       type = "error", duration = 10)
+    })
+  })
   # Apply gate with lasso/brush selection
   # Update the observeEvent(input$apply_gate, {...}) section
   observeEvent(input$apply_gate, {

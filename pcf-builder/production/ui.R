@@ -26,6 +26,9 @@ ui <- fluidPage(
       uiOutput("samples") %>% withSpinner(color="#0dc5c1"),
       selectInput('ref_selection','Select Reference Group',choices = "",selected = ""),
       selectInput("celltype_to_analyze", "Available Celltypes", choices = "", selected = ""),
+      selectizeInput("sample_order", "Plot order (drag to reorder, top → bottom)",
+                     choices = NULL, selected = NULL, multiple = TRUE,
+                     options = list(plugins = list("drag_drop"))),
       textInput("run_label", "Results Name"),
       
       tags$hr(),

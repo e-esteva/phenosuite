@@ -9,6 +9,8 @@ require(dplyr)
 require(lubridate)
 require(jsonlite)
 source('/srv/shiny-server/phenomenalist/utils/provenance.R')
+source('/srv/shiny-server/phenomenalist/utils/anndata_export.R')
+source('/srv/shiny-server/phenomenalist/utils/vectra_export.R')
 
 options(shiny.maxRequestSize = 1000 * 1024^2)
 jsResetCode <- "shinyjs.resetClick = function() { history.go(0) }"
@@ -284,6 +286,7 @@ ui <- fluidPage(
       # ── Step 4: Run ─────────────────────────────────────────────
       div(class = "step-block",
         div(class = "step-label", span(class = "step-num", "4"), "Execute"),
+        checkboxInput("export_h5ad", "Also export .h5ad (AnnData) file", value = FALSE),
         actionButton("run", "Run Phenotyping",
                      class = "btn btn-run", icon = icon("play")),
         br(), br(),
@@ -297,6 +300,11 @@ ui <- fluidPage(
 
     mainPanel(
       width = 9,
+      div(style = "padding: 12px 0 6px;",
+        selectInput("annotation_level", "Annotation layer:",
+          choices  = c("Harmonised" = "harmonised", "Broad Lineage" = "broad"),
+          selected = "harmonised", width = "220px")
+      ),
       tabsetPanel(type = "tabs",
         tabPanel("Input Heatmap",
           plotOutput("plots_ai", height = "520px")
@@ -381,8 +389,12 @@ server <- shinyServer(function(input, output, session) {
           cache_age <- as.numeric(Sys.Date() - max(as.Date(cached$created), na.rm = TRUE))
           use_cache <- cache_age <= 90
         }
+        # Exclude model families that don't support the chat/completions
+        # endpoint (realtime, audio, transcription, image, embedding, etc.)
+        non_chat_pattern <- "realtime|audio|transcribe|whisper|tts|image|embedding|moderation|dall-e"
+
         if (use_cache) {
-          models_vec <- cached$id
+          models_vec <- str_subset(cached$id, non_chat_pattern, negate = TRUE)
         } else {
           raw        <- openai::list_models(openai_api_key = key)
           models_df  <- raw$data %>%
@@ -392,6 +404,7 @@ server <- shinyServer(function(input, output, session) {
           models_vec <- str_subset(models_df$id, "gpt")
           write.csv(models_df[match(models_vec, models_df$id), ],
                     cache_path, row.names = FALSE)
+          models_vec <- str_subset(models_vec, non_chat_pattern, negate = TRUE)
         }
         list(ok = TRUE, models = models_vec)
       }, error = function(e) list(ok = FALSE, msg = conditionMessage(e)))
@@ -645,6 +658,7 @@ server <- shinyServer(function(input, output, session) {
           }
         } else {
           message(glue("GPT call failed for cluster {i} after 2 attempts"))
+          new_clusters_[new_clusters_ == i] <- glue("{i}-Unannotated")
         }
       }
 
@@ -769,6 +783,23 @@ server <- shinyServer(function(input, output, session) {
                              Broad      = unname(broaden_map)),
                   glue("{tempdir0}/broad-map-v{v}.csv"), row.names = FALSE)
 
+      # ── Vectra-format CSV export (for PCF-toolkit compatibility) ──
+      harmonised_col <- group_out   # group_out is always the harmonised column, set above
+      write_vectra_csv(spe, phenotype_col = harmonised_col,
+                        tissue_fallback = input$tissue, out_dir = tempdir0)
+      broad_col_candidate <- sub("_harmonised$", "_broad", harmonised_col)
+      if (broad_col_candidate %in% names(colData(spe)))
+        write_vectra_csv(spe, phenotype_col = broad_col_candidate,
+                          tissue_fallback = input$tissue, out_dir = tempdir0)
+
+      # ── Optional .h5ad (AnnData) export ────────────────────────────
+      if (isTRUE(input$export_h5ad)) {
+        # AnnData carries colData, spatialCoords and all assays natively, so the
+        # whole object goes out rather than the hand-picked attribute list loom
+        # needed.
+        write_h5ad(spe, glue("{tempdir0}/annotated_data.h5ad"))
+      }
+
       generate_colors <- function(n) {
         if (n <= 102) rainbow(n)
         else hsv(seq(0, 1, length.out = n + 1)[1:n], s = 0.8, v = 0.8)
@@ -790,6 +821,13 @@ server <- shinyServer(function(input, output, session) {
       write.csv(spatial_coords,
                 glue("{tempdir0}/annotated_spatial_coords-v{v}.csv"))
 
+      if (!is.null(broad_labels)) {
+        spatial_coords_broad         <- data.frame(spatialCoords(spe))
+        spatial_coords_broad$cluster <- broad_labels
+        write.csv(spatial_coords_broad,
+                  glue("{tempdir0}/annotated_spatial_coords_broad-v{v}.csv"))
+      }
+
       # Store annotated SPE for renderPlots to consume
       rv$annotated_spe  <- spe
       rv$run_complete   <- TRUE
@@ -801,17 +839,20 @@ server <- shinyServer(function(input, output, session) {
     showNotification("Phenotyping complete.", type = "message", duration = 5)
   })
 
-  # ── Helper: resolve the latest harmonised annotation column ──────────
-  latest_annotation_col <- function(spe) {
-    all_cols  <- names(colData(spe))
-    # prefer _harmonised suffix; fall back to base annotated_clusters
-    harm_cols <- all_cols[grepl("_harmonised$", all_cols)]
-    if (length(harm_cols) > 0) {
+  # ── Helper: resolve the latest annotation column for a given layer ───
+  # level: "harmonised" | "broad"
+  latest_annotation_col <- function(spe, level = "harmonised") {
+    all_cols <- names(colData(spe))
+    suffix   <- glue("_{level}$")
+    cols     <- all_cols[grepl(suffix, all_cols)]
+    if (length(cols) > 0) {
       # pick highest version number
-      versions <- na.omit(as.numeric(sub(".*_v([0-9]+)_harmonised$", "\\1", harm_cols)))
-      if (length(versions) == 0) return(harm_cols[1])
-      return(glue("annotated_clusters_v{max(versions)}_harmonised"))
+      versions <- na.omit(as.numeric(sub(glue(".*_v([0-9]+)_{level}$"), "\\1", cols)))
+      if (length(versions) == 0) return(cols[1])
+      return(glue("annotated_clusters_v{max(versions)}_{level}"))
     }
+    if (level != "harmonised") return(NULL)   # broadening may have failed / not run for this SPE
+    # legacy fallback: pre-_harmonised-suffix saved objects
     base_cols <- all_cols[grepl("^annotated_clusters", all_cols) & !grepl("_marked|_broad|_harmonised", all_cols)]
     if (length(base_cols) == 0) return(NULL)
     if ("annotated_clusters" %in% base_cols && length(base_cols) == 1)
@@ -821,11 +862,20 @@ server <- shinyServer(function(input, output, session) {
     glue("annotated_clusters_v{max(versions)}")
   }
 
+  # Resolves the user's chosen layer, falling back to harmonised if the
+  # broad-lineage column doesn't exist for this run (e.g. broadening failed).
+  resolve_group_out <- function(spe) {
+    level     <- if (is.null(input$annotation_level)) "harmonised" else input$annotation_level
+    group_out <- latest_annotation_col(spe, level)
+    if (is.null(group_out)) group_out <- latest_annotation_col(spe, "harmonised")
+    group_out
+  }
+
   # ── Heatmap: annotated clusters ───────────────────────────────────────
   output$plots_ai3 <- renderPlot({
     req(rv$run_complete, !is.null(rv$annotated_spe))
     spe       <- rv$annotated_spe
-    group_out <- latest_annotation_col(spe)
+    group_out <- resolve_group_out(spe)
     req(group_out)
     plot_heatmap.mod(x = spe, group_by = group_out, out_dir = NULL,
                      size.row = 8, size.col = 8)
@@ -835,7 +885,7 @@ server <- shinyServer(function(input, output, session) {
   output$plots_ai2 <- renderPlot({
     req(rv$run_complete, !is.null(rv$annotated_spe))
     spe       <- rv$annotated_spe
-    group_out <- latest_annotation_col(spe)
+    group_out <- resolve_group_out(spe)
     req(group_out)
 
     generate_colors <- function(n) {
