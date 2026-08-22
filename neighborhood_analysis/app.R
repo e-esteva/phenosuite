@@ -1,4 +1,4 @@
-# NeighborhoodR ── Spatial Neighbourhood Analysis (memory-optimised)
+# NeighborhoodR ── Spatial Neighborhood Analysis (memory-optimised)
 # PhenoSuite | neighborhood_analysis/app.R
 #
 # Python backend (reticulate + sklearn/scipy/numpy) is used for:
@@ -130,12 +130,20 @@ def build_pooled_niche_matrix(coords_list, ct_enc_list, n_cts, k1):
     return niche   # float32 — stays in Python heap
 
 def loo_stability_sweep(niche_mat, ct_enc_r, samp_enc_r, n_samples,
-                        k_sweep_r, loo_n, loo_mode, agg, n_cts):
+                        k_sweep_r, loo_n, loo_mode, agg, n_cts,
+                        sample_group_r=None):
     """
     Full LOO stability sweep in Python.
     niche_mat : float32 numpy array (already in Python memory)
     ct_enc_r  : 0-indexed celltype vector (R integer vector)
     samp_enc_r: 0-indexed sample vector   (R integer vector)
+    sample_group_r : 0-indexed group-per-sample vector (R integer vector),
+        required when loo_mode == 'group' — e.g. timepoint, from the mapped
+        condition. Holds out loo_n samples from *every* group each fold,
+        instead of drawing loo_n/pct from the pooled sample list, so a
+        stratified structure (e.g. N timepoints x R replicates) actually
+        gets tested as intended rather than approximated by picking a total
+        count and hoping the random draw lands evenly across groups.
     Returns dict with 'k' and 'stability' lists.
     """
     nm       = niche_mat                        # reference, no copy
@@ -146,16 +154,32 @@ def loo_stability_sweep(niche_mat, ct_enc_r, samp_enc_r, n_samples,
     n_cts    = int(n_cts)
     loo_n    = float(loo_n)
 
-    n_hold = max(1, min(int(loo_n), n_s - 1)) if loo_mode == 'count' \
-             else max(1, int(np.floor(n_s * loo_n / 100.0)))
+    rng = np.random.default_rng(0)
+    n_iter = min(n_s, 20)
 
-    # Can't hold out if we'd remove all samples — return zero instability
-    if n_hold >= n_s:
-        return {'k': k_sweep, 'stability': [0.0] * len(k_sweep)}
+    if loo_mode == 'group':
+        sample_group = np.asarray(sample_group_r, dtype=np.int32).ravel()
+        groups       = np.unique(sample_group)
+        group_idx    = {g: np.where(sample_group == g)[0] for g in groups}
+        min_group_sz = min(len(idx) for idx in group_idx.values())
+        # Need >=1 training sample left in the smallest group.
+        n_hold_per_group = max(1, min(int(loo_n), min_group_sz - 1))
+        if n_hold_per_group < 1 or len(groups) < 2:
+            return {'k': k_sweep, 'stability': [0.0] * len(k_sweep)}
+        loo_sets = [
+            np.concatenate([rng.choice(idx, n_hold_per_group, replace=False)
+                             for idx in group_idx.values()])
+            for _ in range(n_iter)
+        ]
+    else:
+        n_hold = max(1, min(int(loo_n), n_s - 1)) if loo_mode == 'count' \
+                 else max(1, int(np.floor(n_s * loo_n / 100.0)))
 
-    n_iter  = min(n_s, 20)
-    rng     = np.random.default_rng(0)
-    loo_sets = [rng.choice(n_s, n_hold, replace=False) for _ in range(n_iter)]
+        # Can't hold out if we'd remove all samples — return zero instability
+        if n_hold >= n_s:
+            return {'k': k_sweep, 'stability': [0.0] * len(k_sweep)}
+
+        loo_sets = [rng.choice(n_s, n_hold, replace=False) for _ in range(n_iter)]
 
     agg_fn = np.median if agg == 'median' else np.mean
 
@@ -319,16 +343,38 @@ compute_nh_freq <- function(assignments, ctypes, k2, all_cts) {
 
 .r_loo_stability_sweep <- function(niche_mat, ctypes_vec, sample_labels,
                                    k_sweep, loo_n, loo_mode, agg_fn,
-                                   progress_fn = NULL) {
+                                   sample_group = NULL, progress_fn = NULL) {
   all_cts        <- colnames(niche_mat)
   unique_samples <- unique(sample_labels)
   n_s            <- length(unique_samples)
-  n_hold <- if (loo_mode == "count") min(as.integer(loo_n), n_s - 1L)
-            else max(1L, floor(n_s * loo_n / 100))
-  n_iters  <- min(n_s, 20L)
-  loo_sets <- lapply(seq_len(n_iters), function(i) {
-    set.seed(i); sample(unique_samples, n_hold)
-  })
+  n_iters        <- min(n_s, 20L)
+
+  if (loo_mode == "group") {
+    # sample_group: named vector, names = sample names, values = group label
+    # (e.g. timepoint, from the mapped condition). Holds out loo_n samples
+    # from *every* group each fold, instead of drawing loo_n/pct from the
+    # pooled sample list, so a stratified structure (e.g. N timepoints x R
+    # replicates) actually gets tested as intended.
+    groups       <- sample_group[unique_samples]
+    group_names  <- unique(groups)
+    group_idx    <- lapply(group_names, function(g) unique_samples[groups == g])
+    min_group_sz <- min(lengths(group_idx))
+    n_hold_per_group <- max(1L, min(as.integer(loo_n), min_group_sz - 1L))
+    if (n_hold_per_group < 1L || length(group_names) < 2L) {
+      return(data.frame(k = k_sweep, stability = rep(0, length(k_sweep))))
+    }
+    loo_sets <- lapply(seq_len(n_iters), function(i) {
+      set.seed(i)
+      unlist(lapply(group_idx, function(idx) sample(idx, n_hold_per_group)))
+    })
+  } else {
+    n_hold <- if (loo_mode == "count") min(as.integer(loo_n), n_s - 1L)
+              else max(1L, floor(n_s * loo_n / 100))
+    loo_sets <- lapply(seq_len(n_iters), function(i) {
+      set.seed(i); sample(unique_samples, n_hold)
+    })
+  }
+
   scores <- numeric(length(k_sweep))
   for (ki in seq_along(k_sweep)) {
     if (!is.null(progress_fn)) progress_fn(ki, length(k_sweep), k_sweep[ki])
@@ -484,7 +530,7 @@ ui <- fluidPage(
   titlePanel(div(
     tags$span("NeighborhoodR",
               style = "font-weight:800; font-size:1.55em; color:#2d3a5c;"),
-    tags$span(" — spatial neighbourhood analysis",
+    tags$span(" — spatial neighborhood analysis",
               style = "color:#7a8ab0; font-size:.95em; margin-left:8px;")
   )),
 
@@ -558,7 +604,7 @@ ui <- fluidPage(
     ),
 
     # ── Tab 2: Stability sweep ───────────────────────────────────────────────
-    tabPanel("2 · Neighbourhood Optimisation",
+    tabPanel("2 · Neighborhood Optimisation",
       fluidRow(
         column(4,
           div(class = "panel-card",
@@ -573,7 +619,8 @@ ui <- fluidPage(
                 tags$span(class = "step-badge", "B"), "Leave-one-out Parameters"),
             radioButtons("loo_mode", "Hold-out unit",
                          choices = c("Number of samples" = "count",
-                                     "Percentage of samples" = "pct"),
+                                     "Percentage of samples" = "pct",
+                                     "Per mapped condition" = "group"),
                          inline = TRUE),
             conditionalPanel("input.loo_mode == 'count'",
               numericInput("loo_n_count", "Samples to hold out", value = 1, min = 1)
@@ -581,6 +628,13 @@ ui <- fluidPage(
             conditionalPanel("input.loo_mode == 'pct'",
               numericInput("loo_n_pct", "% of samples to hold out",
                            value = 20, min = 1, max = 90)
+            ),
+            conditionalPanel("input.loo_mode == 'group'",
+              numericInput("loo_n_group", "Samples to hold out per group", value = 1, min = 1),
+              div(class = "info-tag",
+                  "Groups are the Condition Column / Sample → Condition Map set in Tab 1 ",
+                  "(e.g. timepoint) — every fold holds out this many samples from ",
+                  "every group, instead of drawing from the pooled sample list.")
             ),
             selectInput("agg_fn", "Stability metric",
                         choices = c("Median absolute delta" = "median",
@@ -590,7 +644,7 @@ ui <- fluidPage(
                          class = "btn-run", width = "100%"),
             br(), br(),
             div(class = "info-tag",
-                "Optimal K₂ minimises the curve — neighbourhoods are most stable when adding held-out samples changes their celltype composition the least.")
+                "Optimal K₂ minimises the curve — neighborhoods are most stable when adding held-out samples changes their celltype composition the least.")
           ),
           div(class = "panel-card",
             div(class = "panel-title", "Memory After Sweep"),
@@ -624,7 +678,7 @@ ui <- fluidPage(
             div(class = "info-tag",
                 "Pre-filled from the sweep optimum. Override if desired."),
             hr(class = "sep"),
-            actionButton("run_assign", "Assign Neighbourhoods",
+            actionButton("run_assign", "Assign Neighborhoods",
                          class = "btn-run", width = "100%"),
             br(), br(),
             div(class = "info-tag",
@@ -654,7 +708,7 @@ ui <- fluidPage(
             div(class = "panel-title", "Plot Controls"),
             selectInput("viz_sample",  "Sample", choices = NULL),
             selectInput("viz_colour", "Colour cells by",
-                        choices = c("Neighbourhood" = "neighbourhood",
+                        choices = c("Neighborhood" = "neighborhood",
                                     "Cell type"     = "celltype")),
             numericInput("pt_size", "Point size",  value = 1.5,
                          min = 0.2, max = 8,  step = 0.1),
@@ -674,7 +728,7 @@ ui <- fluidPage(
         column(12,
           div(class = "panel-card",
             div(class = "panel-title",
-                "Celltype Composition per Neighbourhood (all samples)"),
+                "Celltype Composition per Neighborhood (all samples)"),
             plotOutput("barplot_nh", height = "420px") %>%
               withSpinner(color = "#4e79a7")
           )
@@ -684,7 +738,7 @@ ui <- fluidPage(
         fluidRow(
           column(12,
             div(class = "panel-card",
-              div(class = "panel-title", "Neighbourhood Abundance by Condition"),
+              div(class = "panel-title", "Neighborhood Abundance by Condition"),
               plotOutput("condition_plot", height = "420px") %>%
                 withSpinner(color = "#4e79a7"),
               br(),
@@ -910,11 +964,50 @@ server <- function(input, output, session) {
                        value = max(input$k2_max, length(rv$all_cts) - 1L))
 
     k_sweep  <- seq(as.integer(input$k2_min), as.integer(input$k2_max))
-    loo_n    <- if (input$loo_mode == "count") input$loo_n_count else input$loo_n_pct
+    loo_n    <- switch(input$loo_mode,
+                        count = input$loo_n_count,
+                        pct   = input$loo_n_pct,
+                        group = input$loo_n_group)
+
+    # ── Group mode: resolve one label per sample from the Condition Column /
+    # Sample -> Condition Map set in Tab 1, same source as .cell_condition().
+    sample_group_v <- NULL
+    if (input$loo_mode == "group") {
+      cond_col <- input$condition_col
+      groups <- if (!is.null(cond_col) && nchar(cond_col)) {
+        vapply(rv$sample_names, function(s) {
+          v <- as.character(colData(rv$spe_list[[s]])[[cond_col]])
+          v <- v[!is.na(v) & nchar(v)]
+          if (length(v)) v[1] else NA_character_
+        }, character(1))
+      } else {
+        vapply(rv$sample_names, function(s) {
+          v <- trimws(input[[paste0("cond_map_", make.names(s))]] %||% "")
+          if (nchar(v)) v else NA_character_
+        }, character(1))
+      }
+      names(groups) <- rv$sample_names
+      if (anyNA(groups)) {
+        showNotification(
+          "Per mapped condition needs every sample assigned — set the Condition Column or fill in every Sample -> Condition Map row in Tab 1.",
+          type = "error")
+        return()
+      }
+      if (length(unique(groups)) < 2L) {
+        showNotification(
+          "Per mapped condition needs at least 2 distinct condition values across your samples.",
+          type = "error")
+        return()
+      }
+      sample_group_v <- groups
+    }
 
     # ── Run sweep ──
     withProgress(message = "Running LOO stability sweep…", value = 0, {
       if (rv$is_python) {
+        sample_group_enc <- if (!is.null(sample_group_v))
+          as.integer(match(sample_group_v[rv$sample_names], unique(sample_group_v)) - 1L)
+        else NULL
         res_py <- reticulate::py$loo_stability_sweep(
           rv$niche_mat,
           as.integer(rv$ct_encoded_v),
@@ -922,7 +1015,8 @@ server <- function(input, output, session) {
           as.integer(rv$n_samples),
           as.integer(k_sweep),
           loo_n, input$loo_mode, input$agg_fn,
-          as.integer(length(rv$all_cts))
+          as.integer(length(rv$all_cts)),
+          sample_group_r = sample_group_enc
         )
         sweep_res <- data.frame(
           k         = as.integer(res_py$k),
@@ -934,6 +1028,7 @@ server <- function(input, output, session) {
         sweep_res <- .r_loo_stability_sweep(
           rv$niche_mat, rv$cell_types_v, rv$sample_labels,
           k_sweep, loo_n, input$loo_mode, agg_fn,
+          sample_group = sample_group_v,
           progress_fn = function(ki, total, k_val)
             incProgress(1 / total, detail = paste0("k = ", k_val))
         )
@@ -967,9 +1062,9 @@ server <- function(input, output, session) {
       annotate("text", x = opt, y = max(df$stability, na.rm = TRUE),
                label = paste0(" K₂ = ", opt), colour = "#e15759",
                hjust = -0.1, fontface = "bold") +
-      labs(x = "K₂ (number of neighbourhoods)",
+      labs(x = "K₂ (number of neighborhoods)",
            y = paste(ifelse(input$agg_fn == "median", "Median", "Mean"),
-                     "absolute Δ (neighbourhood × celltype frequency)"),
+                     "absolute Δ (neighborhood × celltype frequency)"),
            title = "LOO Stability Curve") +
       theme_minimal(base_size = 13) +
       theme(plot.title = element_text(face = "bold"))
@@ -992,11 +1087,11 @@ server <- function(input, output, session) {
     div(
       tags$span("Optimal K₂: ", style = "color:#444; font-size:1.1em;"),
       tags$span(class = "optimal-k", rv$optimal_k2),
-      tags$span(" neighbourhoods", style = "color:#444; font-size:1.1em;")
+      tags$span(" neighborhoods", style = "color:#444; font-size:1.1em;")
     )
   })
 
-  # ── 7. Assign neighbourhoods ──────────────────────────────────────────────
+  # ── 7. Assign neighborhoods ──────────────────────────────────────────────
   output$final_k2_ui <- renderUI({
     numericInput("final_k2_override", "K₂ for final assignment",
                  value = rv$optimal_k2 %||% 6L, min = 2L)
@@ -1006,7 +1101,7 @@ server <- function(input, output, session) {
     req(rv$niche_mat, input$final_k2_override)
     k2 <- as.integer(input$final_k2_override)
 
-    withProgress(message = "Assigning neighbourhoods…", value = 0.15, {
+    withProgress(message = "Assigning neighborhoods…", value = 0.15, {
       if (rv$is_python) {
         km_res      <- reticulate::py$final_kmeans(rv$niche_mat, k2)
         assignments <- as.integer(unlist(km_res$labels))
@@ -1024,7 +1119,7 @@ server <- function(input, output, session) {
       ptr     <- 1L
       for (sname in rv$sample_names) {
         n_cells <- ncol(spe_out[[sname]])
-        colData(spe_out[[sname]])$neighbourhood <-
+        colData(spe_out[[sname]])$neighborhood <-
           paste0("N", assignments[ptr:(ptr + n_cells - 1L)])
         colData(spe_out[[sname]])$sample <- rep(sname, n_cells)
         # Per-sample cell-type columns aren't guaranteed to share a name
@@ -1066,7 +1161,7 @@ server <- function(input, output, session) {
       }
 
       # spe_out keeps full marker data — retained as-is for downstream
-      # export (see download_joint). It's not used for anything internal
+      # export (see download_bundle). It's not used for anything internal
       # to this app, so it never needs to be concatenated as-is.
       rv$spe_list_full <- spe_out
 
@@ -1078,7 +1173,7 @@ server <- function(input, output, session) {
       # differ too (e.g. per-sample cluster-label columns with different
       # names) — none of which this app's own logic reads. Keep only the
       # uniform fields every sample now has.
-      light_cols <- c("sample", "neighbourhood", "celltype",
+      light_cols <- c("sample", "neighborhood", "celltype",
                        if (!is.null(cond_col) && nchar(cond_col)) cond_col,
                        "condition_map")
       spe_light <- lapply(spe_out, function(s) {
@@ -1098,7 +1193,7 @@ server <- function(input, output, session) {
       prov$capture_parameters(reactiveValuesToList(input))
       prov$analysis_completed()
     }
-    showNotification("Neighbourhood assignment complete.", type = "message")
+    showNotification("Neighborhood assignment complete.", type = "message")
     updateTabsetPanel(session, "main_tabs", selected = "4 · Visualisations")
   })
 
@@ -1110,41 +1205,10 @@ server <- function(input, output, session) {
   # the zip downloads, so a download always matches what the GUI shows.
   assignment_summary_df <- reactive({
     if (is.null(rv$joint_spe)) return(NULL)
-    cd   <- as.data.frame(colData(rv$joint_spe)[, c("sample", "neighbourhood"), drop = FALSE])
+    cd   <- as.data.frame(colData(rv$joint_spe)[, c("sample", "neighborhood"), drop = FALSE])
     rows <- lapply(rv$sample_names, function(sname) {
-      tab <- table(cd$neighbourhood[cd$sample == sname])
-      data.frame(Sample = sname, Neighbourhood = names(tab), N_cells = as.integer(tab))
-    })
-    do.call(rbind, rows)
-  })
-
-  # Flat per-cell table (sample, x, y, neighbourhood, celltype, condition) —
-  # lets a cell's neighbourhood be mapped straight back onto the original
-  # object without opening the SPE .rds files in R. Reused by every download
-  # bundle so it's always present, not just the >5GB flat-export branch.
-  joint_coldata_df <- reactive({
-    if (is.null(rv$joint_spe)) return(NULL)
-    rows <- lapply(rv$sample_names, function(sname) {
-      mask  <- colData(rv$joint_spe)$sample == sname
-      spe   <- rv$joint_spe[, mask]
-      coord <- as.data.frame(spatialCoords(spe))
-      colnames(coord) <- c("x", "y")
-
-      celltype <- if ("celltype" %in% colnames(colData(spe)))
-        as.character(colData(spe)$celltype) else NA_character_
-
-      cond <- .cell_condition(sname, spe)
-      if (is.null(cond)) cond <- NA_character_
-
-      data.frame(
-        sample        = sname,
-        x             = coord$x,
-        y             = coord$y,
-        neighbourhood = as.character(colData(spe)$neighbourhood),
-        celltype      = celltype,
-        condition     = cond,
-        stringsAsFactors = FALSE
-      )
+      tab <- table(cd$neighborhood[cd$sample == sname])
+      data.frame(Sample = sname, Neighborhood = names(tab), N_cells = as.integer(tab))
     })
     do.call(rbind, rows)
   })
@@ -1154,7 +1218,7 @@ server <- function(input, output, session) {
     rows <- lapply(rv$sample_names, function(sname) {
       spe <- rv$joint_spe[, colData(rv$joint_spe)$sample == sname]
       if (!"celltype" %in% colnames(colData(spe))) return(NULL)
-      data.frame(neighbourhood = colData(spe)$neighbourhood,
+      data.frame(neighborhood = colData(spe)$neighborhood,
                  celltype      = as.character(colData(spe)$celltype),
                  sample        = sname)
     })
@@ -1162,20 +1226,20 @@ server <- function(input, output, session) {
     if (is.null(df) || !nrow(df)) return(NULL)
 
     df_freq <- df %>%
-      count(neighbourhood, celltype) %>%
-      group_by(neighbourhood) %>%
+      count(neighborhood, celltype) %>%
+      group_by(neighborhood) %>%
       mutate(prop = n / sum(n)) %>%
       ungroup()
 
     all_cts_plot <- sort(unique(df_freq$celltype))
     pal_vec      <- setNames(pal(length(all_cts_plot)), all_cts_plot)
 
-    ggplot(df_freq, aes(neighbourhood, prop, fill = celltype)) +
+    ggplot(df_freq, aes(neighborhood, prop, fill = celltype)) +
       geom_col(position = "stack", width = 0.75) +
       scale_fill_manual(values = pal_vec) +
       scale_y_continuous(labels = percent_format()) +
-      labs(x = "Neighbourhood", y = "Proportion", fill = "Cell type",
-           title = "Celltype composition per neighbourhood") +
+      labs(x = "Neighborhood", y = "Proportion", fill = "Cell type",
+           title = "Celltype composition per neighborhood") +
       theme_minimal(base_size = 12) +
       theme(axis.text.x = element_text(angle = 30, hjust = 1),
             plot.title  = element_text(face = "bold"))
@@ -1187,7 +1251,7 @@ server <- function(input, output, session) {
       spe  <- rv$joint_spe[, colData(rv$joint_spe)$sample == sname]
       cond <- .cell_condition(sname, spe)
       if (is.null(cond)) return(NULL)
-      data.frame(neighbourhood = colData(spe)$neighbourhood,
+      data.frame(neighborhood = colData(spe)$neighborhood,
                  condition     = cond,
                  sample        = sname)
     })
@@ -1195,13 +1259,13 @@ server <- function(input, output, session) {
     if (is.null(df) || !nrow(df)) return(NULL)
 
     df_freq <- df %>%
-      count(sample, condition, neighbourhood) %>%
+      count(sample, condition, neighborhood) %>%
       group_by(sample) %>%
       mutate(prop = n / sum(n)) %>%
       ungroup()
 
     df_freq %>%
-      group_by(neighbourhood) %>%
+      group_by(neighborhood) %>%
       summarise(
         kw_statistic = tryCatch(
           round(kruskal.test(prop ~ condition, data = cur_data())$statistic, 4),
@@ -1233,98 +1297,45 @@ server <- function(input, output, session) {
     sz   <- .joint_size()
     big  <- sz >= 5e9
     lbl  <- if (big)
-      paste0("Download bundle (.zip, ~", round(sz / 1e9, 1), " GB coldata export + summaries)")
+      paste0("Download bundle (.zip, ~", round(sz / 1e9, 1), " GB coldata + coordinates + summaries)")
     else
-      paste0("Download bundle (.zip, ~", round(sz / 1e6), " MB SPE objects + coldata + summaries)")
+      paste0("Download bundle (.zip, ~", round(sz / 1e6), " MB SPE objects + coldata + coordinates + summaries)")
     tagList(
       br(),
       div(class = "info-tag",
           if (big)
-            paste0("Object exceeds 5 GB — bundle contains the flat per-cell coldata table (sample, x, y, ",
-                   "neighbourhood, celltype, condition) but skips the per-sample SPE .rds objects, plus the ",
+            paste0("Object exceeds 5 GB — bundle skips the per-sample SPE .rds objects (markers), but ",
+                   "includes per-sample coldata tables (x, y, neighborhood, celltype, condition), ",
+                   "per-sample/per-neighborhood coordinate files for log-odds and PCF analysis, the ",
                    "assignment summary, celltype composition plot, and Kruskal-Wallis condition statistics.")
           else
             paste0("Under 5 GB — bundle contains one full SpatialExperiment (.rds) per sample (markers ",
-                   "intact) plus the same flat per-cell coldata table (sample, x, y, neighbourhood, celltype, ",
-                   "condition), the assignment summary, celltype composition plot, and Kruskal-Wallis ",
-                   "condition statistics.")),
+                   "intact), per-sample coldata tables (x, y, neighborhood, celltype, condition), ",
+                   "per-sample/per-neighborhood coordinate files for log-odds and PCF analysis, the ",
+                   "assignment summary, celltype composition plot, and Kruskal-Wallis condition statistics.")),
       br(),
-      downloadButton("download_joint", lbl, class = "btn-dl"),
-      br(), br(),
-      div(class = "info-tag",
-          "Per-sample, per-neighbourhood spatial coordinate files — for running log-odds or PCF ",
-          "analysis restricted to a single neighbourhood within a sample. Also includes the same flat ",
-          "per-cell coldata table (with neighbourhood as its own column, unsplit), the assignment ",
-          "summary, celltype composition plot, and Kruskal-Wallis condition statistics."),
-      br(),
-      downloadButton("download_nbhd_coords", "Download neighbourhood coordinate files (.zip)", class = "btn-dl")
+      downloadButton("download_bundle", lbl, class = "btn-dl")
     )
   })
 
-  output$download_joint <- downloadHandler(
-    filename = function() paste0("neighbourhoodR_joint_", Sys.Date(), ".zip"),
-    content = function(file) {
-      tmp <- tempfile("joint_export_")
-      dir.create(tmp)
-      on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
-
-      if (.joint_size() < 5e9) {
-        # ── Full per-sample SpatialExperiments ──
-        # (markers intact) with neighbourhood + condition in colData. One
-        # .rds per sample rather than cbind()'d — per-sample marker panels
-        # aren't guaranteed to match, and cbind() requires identical row
-        # counts and colData column names across objects.
-        for (sname in rv$sample_names) {
-          saveRDS(rv$spe_list_full[[sname]],
-                  file.path(tmp, paste0(sname, ".rds")))
-        }
-      }
-
-      # ── Flat per-cell coldata (sample, x, y, neighbourhood, celltype,
-      # condition) — written unconditionally, alongside the .rds objects when
-      # under 5 GB, so a cell's neighbourhood can always be read back without
-      # opening the SPE objects in R.
-      coldata <- joint_coldata_df()
-      if (!is.null(coldata)) {
-        con <- gzfile(file.path(tmp, "neighbourhood_coldata.csv.gz"), open = "wb")
-        write.csv(coldata, con, row.names = FALSE)
-        close(con)
-      }
-
-      # ── Assignment summary, condition stats, and composition plot ──
-      # ride along in every bundle so a download always carries the same
-      # numbers as the GUI, regardless of which branch above ran.
-      summ <- assignment_summary_df()
-      if (!is.null(summ))
-        write.csv(summ, file.path(tmp, "assignment_summary.csv"), row.names = FALSE)
-
-      stats <- condition_stats_df()
-      if (!is.null(stats))
-        write.csv(stats, file.path(tmp, "condition_stats_kruskal_wallis.csv"), row.names = FALSE)
-
-      plt <- barplot_nh_plot()
-      if (!is.null(plt))
-        ggsave(file.path(tmp, "celltype_composition_per_neighbourhood.png"),
-               plot = plt, width = 10, height = 6, dpi = 150)
-
-      zip::zip(zipfile = file, files = dir(tmp), root = tmp, compression_level = 1)
-    }
-  )
-
-  # ── Per-sample, per-neighbourhood spatial coordinate exports ───────────────
-  # One CSV per (sample, neighbourhood), in two formats:
-  #  - logodds/: x, y, cluster        (pairwise_logOdds() input)
-  #  - pcf/:     Sample Name, Cell X/Y Position, Tissue Category, Phenotype
-  #              (extract_data()/pcf() input, Vectra cell_seg_data format)
-  # Restricting each file to one neighbourhood lets these tools be run on a
-  # single niche within a sample, rather than the whole tissue.
-  output$download_nbhd_coords <- downloadHandler(
-    filename = function() paste0("neighbourhoodR_coords_", Sys.Date(), ".zip"),
+  # ── Download bundle ─────────────────────────────────────────────────────
+  # One .zip covering everything: per-sample SPE objects (markers intact,
+  # skipped only when the full-marker export would exceed 5 GB — a server-
+  # side memory/disk concern while building the zip, not a browser download
+  # limit), per-sample coldata tables, per-sample/per-neighborhood coordinate
+  # files for log-odds/PCF tools, and the summary table/stats/plot. Kept as a
+  # single download rather than split by content — uploads are what's capped
+  # (shiny.maxRequestSize), not downloads, so there's no reason to make the
+  # user grab two separate zips for one analysis.
+  output$download_bundle <- downloadHandler(
+    filename = function() paste0("neighborhoodR_", Sys.Date(), ".zip"),
     content  = function(file) {
       req(rv$joint_spe)
-      tmp <- tempfile("nbhd_coords_")
+      tmp <- tempfile("neighborhoodR_export_")
       dir.create(tmp)
       on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
+
+      include_spe <- .joint_size() < 5e9
 
       for (sname in rv$sample_names) {
         spe  <- rv$joint_spe[, colData(rv$joint_spe)$sample == sname]
@@ -1332,8 +1343,32 @@ server <- function(input, output, session) {
         colnames(xy) <- c("x", "y")
         ct   <- if ("celltype" %in% colnames(colData(spe)))
           as.character(colData(spe)$celltype) else NA_character_
-        nbhd <- as.character(colData(spe)$neighbourhood)
+        nbhd <- as.character(colData(spe)$neighborhood)
+        cond <- .cell_condition(sname, spe)
+        if (is.null(cond)) cond <- NA_character_
 
+        # ── Full per-sample SpatialExperiment (markers intact) ──
+        # One .rds per sample rather than cbind()'d — per-sample marker
+        # panels aren't guaranteed to match, and cbind() requires identical
+        # row counts and colData column names across objects.
+        if (include_spe)
+          saveRDS(rv$spe_list_full[[sname]], file.path(tmp, paste0(sname, ".rds")))
+
+        # ── Per-sample coldata (x, y, neighborhood, celltype, condition) ──
+        # lets this sample's neighborhood assignment be mapped straight back
+        # onto the original object without opening the .rds in R.
+        write.csv(
+          data.frame(x = xy$x, y = xy$y, neighborhood = nbhd,
+                     celltype = ct, condition = cond, stringsAsFactors = FALSE),
+          file.path(tmp, paste0(sname, "_coldata.csv")), row.names = FALSE)
+
+        # ── Per-sample, per-neighborhood coordinate files ──
+        # One CSV per (sample, neighborhood), in two formats:
+        #  - logodds/: x, y, cluster        (pairwise_logOdds() input)
+        #  - pcf/:     Sample Name, Cell X/Y Position, Tissue Category, Phenotype
+        #              (extract_data()/pcf() input, Vectra cell_seg_data format)
+        # Restricting each file to one neighborhood lets these tools be run
+        # on a single niche within a sample, rather than the whole tissue.
         lo_dir  <- file.path(tmp, sname, "logodds")
         pcf_dir <- file.path(tmp, sname, "pcf")
         dir.create(lo_dir,  recursive = TRUE)
@@ -1361,17 +1396,6 @@ server <- function(input, output, session) {
         }
       }
 
-      # ── Flat per-cell coldata (sample, x, y, neighbourhood, celltype,
-      # condition) — the split logodds/pcf files above restrict each row to
-      # one neighbourhood by construction (folder + filename only), so this
-      # is what lets a cell be mapped straight back to the original object.
-      coldata <- joint_coldata_df()
-      if (!is.null(coldata)) {
-        con <- gzfile(file.path(tmp, "neighbourhood_coldata.csv.gz"), open = "wb")
-        write.csv(coldata, con, row.names = FALSE)
-        close(con)
-      }
-
       # ── Assignment summary, condition stats, and composition plot ──
       summ <- assignment_summary_df()
       if (!is.null(summ))
@@ -1383,7 +1407,7 @@ server <- function(input, output, session) {
 
       plt <- barplot_nh_plot()
       if (!is.null(plt))
-        ggsave(file.path(tmp, "celltype_composition_per_neighbourhood.png"),
+        ggsave(file.path(tmp, "celltype_composition_per_neighborhood.png"),
                plot = plt, width = 10, height = 6, dpi = 150)
 
       zip::zip(zipfile = file, files = dir(tmp), root = tmp, compression_level = 1)
@@ -1399,8 +1423,8 @@ server <- function(input, output, session) {
     df    <- as.data.frame(spatialCoords(spe))
     colnames(df) <- c("x", "y")
 
-    if (input$viz_colour == "neighbourhood") {
-      df$colour <- colData(spe)$neighbourhood
+    if (input$viz_colour == "neighborhood") {
+      df$colour <- colData(spe)$neighborhood
     } else {
       df$colour <- if ("celltype" %in% colnames(colData(spe)))
         as.character(colData(spe)$celltype) else "unknown"
@@ -1440,7 +1464,7 @@ server <- function(input, output, session) {
       spe  <- rv$joint_spe[, colData(rv$joint_spe)$sample == sname]
       cond <- .cell_condition(sname, spe)
       if (is.null(cond)) return(NULL)
-      data.frame(neighbourhood = colData(spe)$neighbourhood,
+      data.frame(neighborhood = colData(spe)$neighborhood,
                  condition     = cond,
                  sample        = sname)
     })
@@ -1448,7 +1472,7 @@ server <- function(input, output, session) {
     req(df)
 
     df_freq <- df %>%
-      count(sample, condition, neighbourhood) %>%
+      count(sample, condition, neighborhood) %>%
       group_by(sample) %>%
       mutate(prop = n / sum(n)) %>%
       ungroup()
@@ -1458,28 +1482,28 @@ server <- function(input, output, session) {
     # Fix condition to a shared factor level set so position_dodge() lines up
     # identically between the boxplot layer and the singleton-point layer
     # below (each layer would otherwise compute dodge offsets from whatever
-    # subset of conditions it happens to contain at each neighbourhood).
+    # subset of conditions it happens to contain at each neighborhood).
     df_freq$condition <- factor(df_freq$condition, levels = conditions)
 
     # A boxplot needs >1 value to show anything but a flat, uncoloured line
     # (min = median = max collapses the box to zero height, so its fill
     # colour — the only thing the legend encodes — never renders). For any
-    # (neighbourhood, condition) backed by exactly one sample, overlay a
+    # (neighborhood, condition) backed by exactly one sample, overlay a
     # large coloured point at that value instead, so it's still readable
     # from the legend. Groups with >1 sample are untouched.
     df_freq <- df_freq %>%
-      group_by(neighbourhood, condition) %>%
+      group_by(neighborhood, condition) %>%
       mutate(n_samples = n()) %>%
       ungroup()
     singles <- df_freq %>% filter(n_samples == 1)
 
-    p <- ggplot(df_freq, aes(neighbourhood, prop, fill = condition)) +
+    p <- ggplot(df_freq, aes(neighborhood, prop, fill = condition)) +
       geom_boxplot(position = position_dodge(0.8), width = 0.7, outlier.size = 1.2) +
       scale_fill_manual(values = pal_vec) +
       scale_y_continuous(labels = percent_format()) +
-      labs(x = "Neighbourhood", y = "Proportion of sample cells",
+      labs(x = "Neighborhood", y = "Proportion of sample cells",
            fill = "Condition",
-           title = paste0("Neighbourhood abundance by ", cond_label)) +
+           title = paste0("Neighborhood abundance by ", cond_label)) +
       theme_minimal(base_size = 12) +
       theme(axis.text.x = element_text(angle = 30, hjust = 1),
             plot.title  = element_text(face = "bold"))
@@ -1509,8 +1533,10 @@ server <- function(input, output, session) {
       k2_min        = input$k2_min %||% 3L,
       k2_max        = input$k2_max %||% 10L,
       loo_mode      = input$loo_mode %||% "count",
-      loo_n         = (if (isTRUE(input$loo_mode == "count"))
-                        input$loo_n_count else input$loo_n_pct) %||% 1,
+      loo_n         = (switch(input$loo_mode %||% "count",
+                              count = input$loo_n_count,
+                              pct   = input$loo_n_pct,
+                              group = input$loo_n_group)) %||% 1,
       agg_fn        = input$agg_fn %||% "median",
       final_k2      = input$final_k2_override %||% rv$optimal_k2 %||% NA,
       optimal_k2    = rv$optimal_k2,
@@ -1591,7 +1617,7 @@ if (USE_PYTHON) {
 ptr <- 1L
 for (s in names(spe_list)) {
   n <- ncol(spe_list[[s]])
-  colData(spe_list[[s]])$neighbourhood <- paste0("N", assignments[ptr:(ptr + n - 1L)])
+  colData(spe_list[[s]])$neighborhood <- paste0("N", assignments[ptr:(ptr + n - 1L)])
   colData(spe_list[[s]])$sample        <- rep(s, n)
   # Per-sample cell-type columns aren't guaranteed to share a name across
   # samples (e.g. cluster-label columns embed the per-sample cluster count),
@@ -1600,7 +1626,7 @@ for (s in names(spe_list)) {
   ptr <- ptr + n
 }
 # spe_list keeps full marker data — save as-is for downstream analysis.
-saveRDS(spe_list, "neighbourhoodR_full_list.rds")
+saveRDS(spe_list, "neighborhoodR_full_list.rds")
 
 # Concatenate into a single SPE for plotting/summary only. cbind() requires
 # identical row counts AND identical colData column names across objects.
@@ -1608,7 +1634,7 @@ saveRDS(spe_list, "neighbourhoodR_full_list.rds")
 # neither of which this app's own logic reads — so keep only the uniform
 # fields every sample now has.
 spe_light <- lapply(spe_list, function(s) {
-  cd <- colData(s)[, intersect(c("sample", "neighbourhood", "celltype"), colnames(colData(s))), drop = FALSE]
+  cd <- colData(s)[, intersect(c("sample", "neighborhood", "celltype"), colnames(colData(s))), drop = FALSE]
   SpatialExperiment(
     assays        = list(placeholder = matrix(numeric(0), nrow = 0, ncol = ncol(s))),
     colData       = cd,
@@ -1616,8 +1642,8 @@ spe_light <- lapply(spe_list, function(s) {
   )
 })
 joint_spe <- do.call(cbind, unname(spe_light))
-saveRDS(joint_spe, "neighbourhoodR_joint.rds")
-message("Done — full list saved to neighbourhoodR_full_list.rds, joint SPE saved to neighbourhoodR_joint.rds")
+saveRDS(joint_spe, "neighborhoodR_joint.rds")
+message("Done — full list saved to neighborhoodR_full_list.rds, joint SPE saved to neighborhoodR_joint.rds")
 )")
   })
 
@@ -1626,12 +1652,12 @@ message("Done — full list saved to neighbourhoodR_full_list.rds, joint SPE sav
   })
 
   output$download_script <- downloadHandler(
-    filename = function() paste0("neighbourhoodR_replay_", Sys.Date(), ".R"),
+    filename = function() paste0("neighborhoodR_replay_", Sys.Date(), ".R"),
     content  = function(file) writeLines(replay_script(), file)
   )
 
   output$download_prov_json <- downloadHandler(
-    filename = function() paste0("neighbourhoodR_provenance_", Sys.Date(), ".json"),
+    filename = function() paste0("neighborhoodR_provenance_", Sys.Date(), ".json"),
     content  = function(file)
       writeLines(jsonlite::toJSON(prov_params(), pretty = TRUE, auto_unbox = TRUE), file)
   )
