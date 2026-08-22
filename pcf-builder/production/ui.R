@@ -32,14 +32,42 @@ ui <- fluidPage(
       textInput("run_label", "Results Name"),
       
       tags$hr(),
+
+      # ---- Heatmap options -------------------------------------------------
+      # Only affect the "Mean interaction heatmap" tab. The violin panel is
+      # unchanged.
+      tags$strong("Heatmap options"),
+      checkboxInput("hm_show_values", "Show values in cells", value = TRUE),
+      sliderInput("hm_cap", "Colour cap (percentile)",
+                  min = 0.80, max = 1.00, value = 0.98, step = 0.01),
+      helpText("Normalised PCF is right-skewed; capping keeps one extreme",
+               "cell from flattening the rest of the map."),
+
+      tags$hr(),
       
       
     ),
     mainPanel(
-      plotOutput("plot") %>% withSpinner(color="#0dc5c1"),
-      
-      actionButton("confirm_pcf", "Confirm"),
-      conditionalPanel(condition='input.confirm_pcf>0',downloadButton(
+      tabsetPanel(
+        id = "views",
+        tabPanel(
+          "Interaction violins",
+          plotOutput("plot") %>% withSpinner(color="#0dc5c1"),
+          actionButton("confirm_pcf", "Confirm")
+        ),
+        tabPanel(
+          "Mean interaction heatmap",
+          plotOutput("heatmap", height = "760px") %>% withSpinner(color="#0dc5c1"),
+          actionButton("export_heatmap", "Export Heatmap")
+        )
+      ),
+
+      tags$hr(),
+
+      # Either output is worth downloading on its own, so the button appears
+      # once the user has confirmed a violin *or* exported a heatmap.
+      conditionalPanel(condition='input.confirm_pcf>0 || input.export_heatmap>0',
+                       downloadButton(
         outputId = "pcf_download",
         label = "Download Results",
         icon = icon("file-download")
