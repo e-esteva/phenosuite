@@ -371,7 +371,8 @@ server <- function(input, output, session) {
         to_py_array(scores),
         to_py_array(comp),
         as.integer(input$n_perm),
-        as.integer(seed_val)))
+        as.integer(seed_val),
+        method = input$score_method))
       setProgress(0.8, message = "Python: threshold sweep...")
 
       thresholds <- seq(input$thresh_range[1], input$thresh_range[2],

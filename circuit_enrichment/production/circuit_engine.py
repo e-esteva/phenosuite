@@ -37,19 +37,38 @@ def _get_jax():
     return _jax_cache["jax"], _jax_cache["jnp"]
 
 
-def _get_perm_fn():
-    """Return the cached jit(vmap(single_permutation)) function."""
-    if "perm" not in _jit_cache:
+def _get_perm_fn(method):
+    """
+    Return the cached jit(vmap(single_permutation)) function for `method`.
+
+    Null model: independently shuffles each circuit member's neighbor-count
+    column across cells. That breaks the cross-member co-occurrence this test
+    is meant to detect while preserving each member's own marginal
+    distribution of local abundance — permuting whole rows (the old approach)
+    doesn't touch a row-order-invariant statistic like this one at all, so it
+    can't produce a real null distribution.
+    """
+    cache_key = f"perm_{method}"
+    if cache_key not in _jit_cache:
         jax, jnp = _get_jax()
 
         def _one_perm(key, comp_j):
-            perm = jax.random.permutation(key, comp_j.shape[0])
-            pc = comp_j[perm]
+            n, k = comp_j.shape
+            col_keys = jax.random.split(key, k)
+            cols = [jax.random.permutation(col_keys[j], comp_j[:, j]) for j in range(k)]
+            pc = jnp.stack(cols, axis=1)
             totals = jnp.maximum(pc.sum(axis=1, keepdims=True), 1.0)
-            return (pc / totals).min(axis=1).mean()
+            fracs = pc / totals
+            if method == "min_fraction":
+                return fracs.min(axis=1).mean()
+            elif method == "geometric_mean":
+                log_fracs = jnp.log(jnp.maximum(fracs, 1e-10))
+                return jnp.exp(log_fracs.mean(axis=1)).mean()
+            else:
+                raise ValueError(f"Unknown method: {method}")
 
-        _jit_cache["perm"] = jax.jit(jax.vmap(_one_perm, in_axes=(0, None)))
-    return _jit_cache["perm"]
+        _jit_cache[cache_key] = jax.jit(jax.vmap(_one_perm, in_axes=(0, None)))
+    return _jit_cache[cache_key]
 
 
 # ============================================================================
@@ -139,9 +158,27 @@ def circuit_score(comp, method="min_fraction"):
         raise ValueError(f"Unknown method: {method}")
 
 
-def circuit_zscore(scores, comp, n_perm=500, seed=42):
+def _score_from_comp(pc, method):
+    """Mean circuit-completeness score over all rows of a composition matrix — the same math as circuit_score(), reused so the null distribution is scored identically to the observed data."""
+    totals = np.maximum(pc.sum(axis=1), 1).astype(np.float64)
+    fracs = pc / totals[:, np.newaxis]
+    if method == "min_fraction":
+        return fracs.min(axis=1).mean()
+    elif method == "geometric_mean":
+        log_fracs = np.log(np.maximum(fracs, 1e-10))
+        return np.exp(log_fracs.mean(axis=1)).mean()
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+
+def circuit_zscore(scores, comp, n_perm=500, seed=42, method="min_fraction"):
     """
     Permutation-based z-score for circuit enrichment.
+
+    Null model: independently permutes each circuit member's neighbor-count
+    column across cells (see _get_perm_fn / _zscore_numpy), then rescores
+    with the same `method` used for the observed `scores` so obs_mean and
+    null_mean are directly comparable.
 
     Routes to JAX vmap path (XLA-threaded, chunked) for n >= LARGE_N,
     and to a plain numpy loop otherwise.
@@ -149,13 +186,16 @@ def circuit_zscore(scores, comp, n_perm=500, seed=42):
     Parameters
     ----------
     scores : ndarray, shape (n,)
-        Observed circuit scores.
+        Observed circuit scores (from circuit_score(comp, method)).
     comp : ndarray, shape (n, k)
         Observed composition matrix.
     n_perm : int
         Number of permutations.
     seed : int
         RNG seed for reproducibility.
+    method : str
+        Scoring method used for `scores` — 'min_fraction' or 'geometric_mean' —
+        so the null distribution is scored the same way.
 
     Returns
     -------
@@ -165,7 +205,8 @@ def circuit_zscore(scores, comp, n_perm=500, seed=42):
     obs_mean = float(scores.mean())
     n = comp.shape[0]
 
-    null_means = _zscore_jax(comp, n_perm, seed) if n >= LARGE_N else _zscore_numpy(comp, n_perm, seed)
+    null_means = (_zscore_jax(comp, n_perm, seed, method) if n >= LARGE_N
+                  else _zscore_numpy(comp, n_perm, seed, method))
 
     null_mean = float(null_means.mean())
     null_sd = float(null_means.std())
@@ -219,27 +260,32 @@ def threshold_sweep(scores, thresholds):
 # INTERNAL HELPERS
 # ============================================================================
 
-def _zscore_numpy(comp, n_perm, seed):
+def _zscore_numpy(comp, n_perm, seed, method):
+    """
+    Independently permutes each circuit member's column across cells (rather
+    than whole rows) so the co-occurrence structure the test targets is
+    actually destroyed under the null, while each member's own marginal
+    abundance distribution is preserved.
+    """
     rng = np.random.default_rng(seed)
-    n = comp.shape[0]
+    n, k = comp.shape
     null_means = np.empty(n_perm)
     for p in range(n_perm):
-        pc = comp[rng.permutation(n)]
-        totals = np.maximum(pc.sum(axis=1), 1).astype(np.float64)
-        null_means[p] = (pc / totals[:, np.newaxis]).min(axis=1).mean()
+        pc = np.column_stack([rng.permutation(comp[:, j]) for j in range(k)])
+        null_means[p] = _score_from_comp(pc, method)
     return null_means
 
 
-def _zscore_jax(comp, n_perm, seed):
+def _zscore_jax(comp, n_perm, seed, method):
     """
     Chunked vmap over permutations.
 
     Processes _PERM_CHUNK permutations per XLA call so peak memory stays
     bounded at _PERM_CHUNK × n × k × 4 bytes regardless of n_perm.
-    The jit(vmap(fn)) kernel is cached across calls via _jit_cache.
+    The jit(vmap(fn)) kernel is cached per-method across calls via _jit_cache.
     """
     jax, jnp = _get_jax()
-    perm_fn = _get_perm_fn()
+    perm_fn = _get_perm_fn(method)
     comp_j = jnp.array(comp, dtype=jnp.float32)
 
     all_keys = jax.random.split(jax.random.PRNGKey(seed), n_perm)
