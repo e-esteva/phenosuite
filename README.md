@@ -208,22 +208,16 @@ The **Gemma mIF Phenotyper** (`gemma_phenotyper/production`) is the local-model 
 
 ### Model sources
 
-| Source | What it needs | Fine-tuned? |
+| Source | What it needs 
 |---|---|---|
-| **Upload model zip** | A merged checkpoint or LoRA adapter, zipped, uploaded through the browser (capped by `shiny.maxRequestSize`, 4 GB) | Yes |
-| **Server directory path** | Same checkpoint/adapter, already sitting in a directory on the server — the practical option for anything bigger than a few GB | Yes |
-| **Ollama server (zero-shot)** | A running Ollama server with the model already pulled; no fine-tuning, no weights loaded into this app at all | No |
 
-The two fine-tuned sources run inference in-process via `infer.py` (`transformers`/`PEFT`, invoked through `system2()`). The Ollama source never touches Python — the R side calls Ollama's HTTP API directly.
+| **Ollama server (zero-shot)** | A running Ollama server with the model already pulled; no fine-tuning, no weights loaded into this app at all
+
+The Ollama source never touches Python — the R side calls Ollama's HTTP API directly.
 
 ### Prompts
 
-The two backends use different prompt shapes, because they're solving different problems: a fine-tuned checkpoint already learned your ontology during training, while an off-the-shelf Ollama model has to be told everything in the prompt itself.
-
-**Fine-tuned checkpoint (merged / LoRA adapter).** Every marker in the panel is sent as a `marker=value` pair alongside the exact text from the **Cell type ontology** box, and the model is asked to return strict JSON:
-
-> *System: "You are a cellular phenotyping assistant for mIF data. Return JSON only."*
-> *User: "Phenotype this cell cluster.\nCluster: {cluster_id} (n={n_cells} cells)\nMean markers ({assay}): {marker=value, marker=value, ...}\nOntology: {ontology_text}"*
+The off-the-shelf Ollama model has to be told everything in the prompt itself.
 
 **Ollama (zero-shot).** No ontology table — instead only the most distinctive markers for that cluster are shown (top/bottom 10% by value, highest-to-lowest), plus the tissue type if one was entered:
 
