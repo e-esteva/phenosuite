@@ -6,6 +6,8 @@ An integrated bioinformatics platform for **single-cell spatial omics** analysis
 
 The entire platform ships as a **single Docker image** — clone the repo, run one command, and browse to `localhost:3838`. No institutional server access needed.
 
+YT tutorial:
+https://youtu.be/T-UkomWvx94
 ---
 
 ## Quick Start (Docker)
